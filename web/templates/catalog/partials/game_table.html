@@ -1,0 +1,109 @@
+{# Partial returned for both full-page load and HTMX in-place updates. #}
+
+<div id="results-info">
+  {% if search_query or filter_val != 'all' %}
+    Showing {{ filtered_count }} of {{ total_count }} game{{ total_count|pluralize }}
+    {% if search_query %} matching "<strong>{{ search_query }}</strong>"{% endif %}
+  {% else %}
+    {{ total_count }} game{{ total_count|pluralize }} in your collection
+  {% endif %}
+</div>
+
+{% if page_obj.object_list %}
+<table>
+  <thead>
+    <tr>
+      <th style="width:48px"></th>{# thumbnail #}
+      <th>Title</th>
+      <th>Year</th>
+      <th>Players</th>
+      <th>Time</th>
+      <th>Barcode</th>
+      <th>Source</th>
+      <th></th>{# actions #}
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in page_obj %}
+    <tr>
+      <td style="width:48px; padding:4px 8px">
+        {% if item.game.thumbnail_url %}
+        <img class="thumb" src="{{ item.game.thumbnail_url }}" alt="{{ item.game.title }}" loading="lazy">
+        {% else %}
+        <span class="thumb-placeholder"></span>
+        {% endif %}
+      </td>
+      <td>
+        <span title="{{ item.game.title }}">{{ item.game.title }}</span>
+        {% if item.is_lent %}
+        <span class="badge badge-lent" style="margin-left:6px">Lent</span>
+        {% endif %}
+      </td>
+      <td>{{ item.game.year_published|default:"—" }}</td>
+      <td>{{ item.game.players_display }}</td>
+      <td>{{ item.game.play_time_display }}</td>
+      <td>
+        {% if item.game.upc %}
+        <span class="badge badge-upc-ok" title="{{ item.game.upc }}">✓ Linked</span>
+        {% else %}
+        <span class="badge badge-upc-miss">No barcode</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if item.source == 'bgg_sync' %}
+        <span class="badge badge-source-bgg">BGG</span>
+        {% elif item.source == 'barcode' %}
+        <span class="badge badge-source-barcode">Scan</span>
+        {% else %}
+        <span class="badge badge-source-manual">Manual</span>
+        {% endif %}
+      </td>
+      <td style="white-space:nowrap">
+        {# Game detail panel — Phase 2 will wire this up #}
+        <button class="btn-table-action" disabled title="Game detail coming in Phase 2">View</button>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{# ── Pagination ── #}
+{% if page_obj.paginator.num_pages > 1 %}
+<div id="pagination">
+  {% if page_obj.has_previous %}
+  <a href="?q={{ search_query }}&filter={{ filter_val }}&sort={{ sort }}&order={{ order }}&page={{ page_obj.previous_page_number }}"
+     hx-get="{% url 'catalog:collection' %}?q={{ search_query }}&filter={{ filter_val }}&sort={{ sort }}&order={{ order }}&page={{ page_obj.previous_page_number }}"
+     hx-target="#collection-content"
+     hx-swap="innerHTML"
+     hx-push-url="true">← Prev</a>
+  {% endif %}
+
+  <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+
+  {% if page_obj.has_next %}
+  <a href="?q={{ search_query }}&filter={{ filter_val }}&sort={{ sort }}&order={{ order }}&page={{ page_obj.next_page_number }}"
+     hx-get="{% url 'catalog:collection' %}?q={{ search_query }}&filter={{ filter_val }}&sort={{ sort }}&order={{ order }}&page={{ page_obj.next_page_number }}"
+     hx-target="#collection-content"
+     hx-swap="innerHTML"
+     hx-push-url="true">Next →</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+
+{# ── Empty state ── #}
+<div class="empty-state">
+  {% if search_query or filter_val != 'all' %}
+    <h2>No games found</h2>
+    <p>Try adjusting your search or filter.</p>
+  {% else %}
+    <h2>Your collection is empty</h2>
+    <p>
+      Sync from BoardGameGeek using the button above, or scan a game barcode<br>
+      with the mobile app to get started.
+    </p>
+  {% endif %}
+</div>
+
+{% endif %}

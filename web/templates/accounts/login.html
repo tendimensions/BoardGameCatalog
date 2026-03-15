@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Login — Board Game Catalog{% endblock %}
+
+{% block content %}
+<div class="auth-page">
+  <div class="auth-card">
+    <h2>Board Game Catalog</h2>
+
+    {% if form.non_field_errors %}
+    <div class="non-field-errors">
+      <ul>{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      <div class="form-group">
+        <label for="{{ form.username.id_for_label }}">Username</label>
+        {{ form.username }}
+        {% if form.username.errors %}
+        <ul class="field-errors">{% for e in form.username.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.password.id_for_label }}">Password</label>
+        {{ form.password }}
+        {% if form.password.errors %}
+        <ul class="field-errors">{% for e in form.password.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+        {% endif %}
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-full" style="margin-top:8px">Log In</button>
+    </form>
+
+    <div class="auth-links">
+      <a href="{% url 'accounts:password_reset' %}">Forgot password?</a>
+      <span>Don't have an account? <a href="{% url 'accounts:register' %}">Create account</a></span>
+    </div>
+  </div>
+</div>
+{% endblock %}

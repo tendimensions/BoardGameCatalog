@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Create Account — Board Game Catalog{% endblock %}
+
+{% block content %}
+<div class="auth-page">
+  <div class="auth-card">
+    <h2>Create Account</h2>
+
+    {% if form.non_field_errors %}
+    <div class="non-field-errors">
+      <ul>{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      <div class="form-group">
+        <label for="{{ form.username.id_for_label }}">Username</label>
+        {{ form.username }}
+        {% if form.username.errors %}
+        <ul class="field-errors">{% for e in form.username.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.email.id_for_label }}">Email Address</label>
+        {{ form.email }}
+        {% if form.email.errors %}
+        <ul class="field-errors">{% for e in form.email.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+        {% endif %}
+        <span class="help-text">Cannot be changed after registration.</span>
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.bgg_username.id_for_label }}">
+          BoardGameGeek Username
+          <span style="color:#555; font-weight:normal"> — optional</span>
+        </label>
+        {{ form.bgg_username }}
+        {% if form.bgg_username.errors %}
+        <ul class="field-errors">{% for e in form.bgg_username.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+        {% endif %}
+        <span class="help-text">Required for syncing your BGG collection. Cannot be changed after registration.</span>
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.password1.id_for_label }}">Password</label>
+        {{ form.password1 }}
+        {% if form.password1.errors %}
+        <ul class="field-errors">{% for e in form.password1.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+        {% endif %}
+        <span class="help-text">Minimum 8 characters.</span>
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.password2.id_for_label }}">Confirm Password</label>
+        {{ form.password2 }}
+        {% if form.password2.errors %}
+        <ul class="field-errors">{% for e in form.password2.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+        {% endif %}
+      </div>
+
+      <div class="form-group-check">
+        {{ form.terms }}
+        <label for="{{ form.terms.id_for_label }}">I accept the terms of service</label>
+      </div>
+      {% if form.terms.errors %}
+      <ul class="field-errors" style="margin-top:-10px; margin-bottom:12px">
+        {% for e in form.terms.errors %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+
+      <button type="submit" class="btn btn-primary btn-full">Create Account</button>
+    </form>
+
+    <div class="auth-links">
+      <span>Already have an account? <a href="{% url 'accounts:login' %}">Log in</a></span>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}API Keys — Board Game Catalog{% endblock %}
+
+{% block content %}
+<div class="content-page">
+  <h2>API Keys</h2>
+
+  {# ── Instructions ── #}
+  <section>
+    <h3>Mobile App Setup</h3>
+    <ol style="color:#aaa; font-size:0.88rem; line-height:2; padding-left:20px">
+      <li>Generate a new API key below.</li>
+      <li>Open the Board Game Catalog mobile app.</li>
+      <li>Paste the key into the app's settings screen to link your account.</li>
+    </ol>
+    <p style="color:#555; font-size:0.82rem; margin-top:10px">
+      Each key gives full access to your collection. Revoke a key immediately if a device is lost.
+    </p>
+  </section>
+
+  {# ── Newly generated key (shown once) ── #}
+  {% if new_key %}
+  <section style="border-color:#2d6a2d">
+    <h3 style="color:#81c784">New API Key — Copy Now</h3>
+    <p style="color:#81c784; font-size:0.84rem; margin-bottom:10px">
+      This key is shown only once. Save it somewhere safe before leaving this page.
+    </p>
+    <div class="api-key-value api-key-new">
+      <span class="key-text" id="new-key-value">{{ new_key }}</span>
+      <button class="copy-btn" onclick="copyKey('new-key-value', this)">Copy</button>
+    </div>
+  </section>
+  {% endif %}
+
+  {# ── Existing keys ── #}
+  <section>
+    <h3>Active Keys</h3>
+    {% if api_keys %}
+    <div class="api-key-list">
+      {% for key in api_keys %}
+      <div class="api-key-item">
+        <div class="key-meta">
+          <span class="key-name">{{ key.name|default:"Unnamed key" }}</span>
+          <span class="key-dates">
+            Created {{ key.created_at|date:"M j, Y" }}
+            {% if key.last_used_at %} · Last used {{ key.last_used_at|date:"M j, Y" }}{% endif %}
+          </span>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+          <div class="api-key-value" style="flex:1; min-width:0">
+            <span class="key-text" style="color:#555; letter-spacing:0.05em">
+              ••••••••••••••••••••••••••••••••{{ key.key|slice:"-8:" }}
+            </span>
+          </div>
+          <form method="post" action="{% url 'accounts:revoke_api_key' key.id %}"
+                onsubmit="return confirm('Revoke this API key? Any device using it will lose access.')">
+            {% csrf_token %}
+            <button type="submit" class="btn-table-action" style="border-color:#5a1a1a; color:#e57373">
+              Revoke
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p style="color:#555; font-size:0.88rem">No active API keys.</p>
+    {% endif %}
+  </section>
+
+  {# ── Generate new key ── #}
+  <section>
+    <h3>Generate New Key</h3>
+    <form method="post" action="{% url 'accounts:generate_api_key' %}">
+      {% csrf_token %}
+      <div class="form-group">
+        <label for="{{ name_form.name.id_for_label }}">{{ name_form.name.label }}</label>
+        {{ name_form.name }}
+        <span class="help-text">{{ name_form.name.help_text }}</span>
+      </div>
+      <button type="submit" class="btn btn-primary">Generate Key</button>
+    </form>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyKey(elementId, btn) {
+  const text = document.getElementById(elementId).textContent.trim();
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}My Collection — Board Game Catalog{% endblock %}
+
+{% block stats %}
+  {{ total_count }} game{{ total_count|pluralize }} in collection
+{% endblock %}
+
+{% block content %}
+<div class="page-wrap">
+
+  {# ── GameUPC informational banner (REQ-CM-034, REQ-CM-035) ── #}
+  {% if show_banner %}
+  <div class="info-banner" id="gameupc-banner">
+    <p>
+      ℹ️ Barcode scanning uses crowdsourced data from
+      <a href="https://www.gameupc.com/" target="_blank" rel="noopener">GameUPC.com</a>.
+      You may be asked to help verify game information when scanning.
+      You can also manually link barcodes to your games to help the community.
+    </p>
+    <button hx-post="{% url 'catalog:dismiss_banner' %}"
+            hx-target="#gameupc-banner"
+            hx-swap="outerHTML"
+            {% csrf_token %}>
+      Dismiss
+    </button>
+  </div>
+  {% endif %}
+
+  {# ── BGG Sync bar (REQ-CM-010) ── #}
+  <div class="sync-bar">
+    <form method="post" action="{% url 'catalog:sync_bgg' %}" id="sync-form">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary" id="sync-btn"
+              {% if not request.user.bgg_username %}title="No BGG username on account"{% endif %}>
+        ↻ Sync from BoardGameGeek.com
+      </button>
+    </form>
+    {% if request.user.bgg_username %}
+    <span style="color:#555; font-size:0.82rem">BGG: {{ request.user.bgg_username }}</span>
+    {% else %}
+    <span style="color:#555; font-size:0.78rem">No BGG username set — sync unavailable</span>
+    {% endif %}
+  </div>
+
+  {# ── Search & filter controls ── #}
+  <div id="filters">
+    <input id="search"
+           type="search"
+           name="q"
+           placeholder="Search games…"
+           value="{{ search_query }}"
+           hx-get="{% url 'catalog:collection' %}"
+           hx-trigger="keyup changed delay:300ms, search"
+           hx-target="#collection-content"
+           hx-swap="innerHTML"
+           hx-push-url="true"
+           hx-include="#filter-select, #sort-select, #order-select">
+
+    <select id="filter-select" name="filter"
+            hx-get="{% url 'catalog:collection' %}"
+            hx-trigger="change"
+            hx-target="#collection-content"
+            hx-swap="innerHTML"
+            hx-push-url="true"
+            hx-include="#search, #sort-select, #order-select">
+      <option value="all"            {% if filter_val == 'all' %}selected{% endif %}>All games</option>
+      <option value="missing_barcode"{% if filter_val == 'missing_barcode' %}selected{% endif %}>Missing barcode</option>
+      <option value="lent"           {% if filter_val == 'lent' %}selected{% endif %}>Lent out</option>
+    </select>
+
+    <select id="sort-select" name="sort"
+            hx-get="{% url 'catalog:collection' %}"
+            hx-trigger="change"
+            hx-target="#collection-content"
+            hx-swap="innerHTML"
+            hx-push-url="true"
+            hx-include="#search, #filter-select, #order-select">
+      <option value="title"   {% if sort == 'title' %}selected{% endif %}>Sort: Title</option>
+      <option value="year"    {% if sort == 'year' %}selected{% endif %}>Sort: Year</option>
+      <option value="players" {% if sort == 'players' %}selected{% endif %}>Sort: Players</option>
+      <option value="time"    {% if sort == 'time' %}selected{% endif %}>Sort: Play Time</option>
+    </select>
+
+    <select id="order-select" name="order"
+            hx-get="{% url 'catalog:collection' %}"
+            hx-trigger="change"
+            hx-target="#collection-content"
+            hx-swap="innerHTML"
+            hx-push-url="true"
+            hx-include="#search, #filter-select, #sort-select">
+      <option value="asc"  {% if order == 'asc' %}selected{% endif %}>↑ Asc</option>
+      <option value="desc" {% if order == 'desc' %}selected{% endif %}>↓ Desc</option>
+    </select>
+  </div>
+
+  {# ── Dynamic content area (replaced by HTMX) ── #}
+  <div id="collection-content">
+    {% include "catalog/partials/game_table.html" %}
+  </div>
+
+</div>
+{% endblock %}

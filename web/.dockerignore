@@ -1,0 +1,13 @@
+# Never send these into the Docker build context
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+db.sqlite3
+staticfiles/
+media/
+.env
+*.log
+.git/
+.gitignore

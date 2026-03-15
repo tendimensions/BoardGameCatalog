@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Email Verification — Board Game Catalog{% endblock %}
+
+{% block content %}
+<div class="auth-page">
+  <div class="auth-card" style="text-align:center">
+    {% if valid %}
+      {# This block is shown briefly before the redirect in views.py #}
+      <h2>Email Verified!</h2>
+      <p style="color:#81c784; margin-bottom:20px">Your account is now active. Redirecting…</p>
+    {% else %}
+      <h2>Invalid or Expired Link</h2>
+      <p style="color:#ff6b6b; line-height:1.7; margin-bottom:20px">
+        This verification link is invalid or has already been used.
+      </p>
+      <p style="color:#555; font-size:0.83rem">
+        Please <a href="{% url 'accounts:register' %}">register again</a> or
+        <a href="{% url 'accounts:login' %}">log in</a> if your account is already active.
+      </p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

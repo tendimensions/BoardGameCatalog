@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Profile — Board Game Catalog{% endblock %}
+
+{% block content %}
+<div class="content-page">
+  <h2>Profile</h2>
+
+  {# ── Editable: username ── #}
+  <section>
+    <h3>Account Details</h3>
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      <div class="form-group">
+        <label for="{{ form.username.id_for_label }}">Username</label>
+        {{ form.username }}
+        {% if form.username.errors %}
+        <ul class="field-errors">{% for e in form.username.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+        {% endif %}
+      </div>
+
+      {# ── Read-only: email (REQ-UM-021) ── #}
+      <div class="form-group">
+        <label>Email Address <span style="color:#444; font-weight:normal">— cannot be changed</span></label>
+        <span class="field-readonly">{{ request.user.email }}</span>
+      </div>
+
+      {# ── Read-only: BGG username (REQ-UM-022) ── #}
+      <div class="form-group">
+        <label>BoardGameGeek Username <span style="color:#444; font-weight:normal">— cannot be changed</span></label>
+        <span class="field-readonly">
+          {% if request.user.bgg_username %}{{ request.user.bgg_username }}{% else %}<em style="color:#444">Not set</em>{% endif %}
+        </span>
+        {% if not request.user.bgg_username %}
+        <span class="help-text" style="color:#555">
+          BGG username can only be set during registration. Create a new account if you need BGG sync.
+        </span>
+        {% endif %}
+      </div>
+
+      <button type="submit" class="btn btn-primary">Save Changes</button>
+    </form>
+  </section>
+
+  {# ── Password ── #}
+  <section>
+    <h3>Security</h3>
+    <a href="{% url 'accounts:password_change' %}" class="btn btn-secondary">Change Password</a>
+  </section>
+
+  {# ── Danger zone ── #}
+  <section>
+    <h3>Danger Zone</h3>
+    <p style="color:#666; font-size:0.85rem; margin-bottom:14px; line-height:1.5">
+      Deleting your account permanently removes all your collection data and cannot be undone.
+    </p>
+    <button class="btn btn-danger"
+            onclick="if(confirm('Delete your account and all collection data? This cannot be undone.')) this.closest('form').submit()"
+            form="delete-account-form">
+      Delete Account
+    </button>
+    <form id="delete-account-form" method="post" action="{% url 'accounts:profile' %}" style="display:none">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="delete_account">
+    </form>
+  </section>
+</div>
+{% endblock %}

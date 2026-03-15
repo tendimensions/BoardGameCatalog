@@ -1,0 +1,44 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Board Game Catalog{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/style.css' %}">
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
+</head>
+<body>
+
+{% if user.is_authenticated %}
+<header>
+  <div class="header-inner">
+    <h1><a href="{% url 'catalog:collection' %}">Board Game Catalog</a></h1>
+    <span id="stats-bar">{% block stats %}{% endblock %}</span>
+    <nav class="header-nav">
+      <a href="{% url 'catalog:collection' %}">Collection</a>
+      <a href="{% url 'accounts:api_keys' %}">API Keys</a>
+      <a href="{% url 'accounts:profile' %}">Profile</a>
+      <form method="post" action="{% url 'accounts:logout' %}" style="display:inline">
+        {% csrf_token %}
+        <button type="submit" class="btn-link">Logout</button>
+      </form>
+    </nav>
+  </div>
+</header>
+{% endif %}
+
+{% if messages %}
+<div class="messages" aria-live="polite">
+  {% for message in messages %}
+  <div class="message message-{{ message.tags }}">{{ message }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% block content %}{% endblock %}
+
+{% block scripts %}{% endblock %}
+</body>
+</html>
