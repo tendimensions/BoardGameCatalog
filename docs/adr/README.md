@@ -12,6 +12,8 @@ An Architecture Decision Record (ADR) captures an important architectural decisi
 |-----|-------|--------|------|
 | [0001](0001-use-django-as-web-framework.md) | Use Django as Web Framework | Accepted | 2026-03-15 |
 | [0002](0002-use-server-side-rendering-with-htmx.md) | Use Server-Side Rendering with HTMX | Accepted | 2026-03-15 |
+| [0003](0003-external-api-integration-strategy.md) | External API Integration Strategy | Accepted | 2026-03-15 |
+| [0004](0004-authentication-and-security-policies.md) | Authentication and Security Policies | Accepted | 2026-03-15 |
 
 ## ADR Statuses
 

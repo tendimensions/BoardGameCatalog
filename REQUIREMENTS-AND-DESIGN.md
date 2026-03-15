@@ -1871,80 +1871,32 @@ For architectural decisions, see the Architecture Decision Records (ADRs) in the
 
 - **[ADR-0001: Use Django as Web Framework](docs/adr/0001-use-django-as-web-framework.md)** - Django 5.0+ selected for development velocity, built-in features, and solo developer context
 - **[ADR-0002: Use Server-Side Rendering with HTMX](docs/adr/0002-use-server-side-rendering-with-htmx.md)** - SSR with HTMX/Alpine.js for simplicity and development speed
+- **[ADR-0003: External API Integration Strategy](docs/adr/0003-external-api-integration-strategy.md)** - BGG rate limiting approach and GameUPC community contribution model
 
 ### 14.2 BoardGameGeek.com Integration
 
 **DESIGN DECISION CONFIRMED:** BoardGameGeek.com data does not contain barcode/UPC information. BGG sync will populate game metadata (title, year, players, images, etc.) but the UPC field will remain null until the game is scanned via the mobile app.
 
-**ISSUE-010: BGG API Rate Limits - RESOLVED**
-
-- **Research completed:** BGG XML API documentation and community best practices reviewed
-- **Findings:**
-  - No explicit rate limits published by BGG
-  - BGG uses async queue system with HTTP 202 "Accepted" responses for large collections
-  - Collections cached for 7 days (or until user modifies collection)
-  - Community recommendation: 2-second delay between requests to be kind to BGG servers
-- **Implementation Requirements:**
-  - Implement retry logic with exponential backoff for HTTP 202 responses
-  - Add 2-second minimum delay between any BGG API calls
-  - Show user progress feedback: "Your collection has XXX games. This may take 30-60 seconds..."
-  - Cache BGG responses and only re-sync when user explicitly requests or >24 hours elapsed
-  - Prevent multiple simultaneous sync requests from same user
-  - Handle HTTP 202 by polling every 2-5 seconds until data is ready (HTTP 200)
-- **Rationale:** BGG is community-run with limited resources. Being a good API citizen ensures availability for all users.
-- **Impact:** Sync may take 5-60 seconds for first collection load (100+ games), but subsequent syncs are fast due to caching
-
-**ISSUE-011: Bidirectional Sync**
-
-- **Question:** Does BGG support POST/PUT operations to update user collections programmatically?
-- **Research needed:** BGG API capabilities investigation
-- **Alternative:** Manual sync or BGG-only pull sync
-- **Impacts:** Feature scope for Phase 6
-- **Future Enhancement:** Investigate if we can push lent status to BGG
+**Implementation Strategy:** See [ADR-0003: External API Integration Strategy](docs/adr/0003-external-api-integration-strategy.md) for rate limiting, caching, and retry logic decisions.
 
 **ISSUE-012: BGG Authentication**
 
 - **Question:** Does BGG require OAuth or API keys? How do we authenticate on behalf of users?
 - **Research needed:** BGG API authentication documentation
 - **Impacts:** Sync implementation
+- **Current approach:** Username-only (no password) for read-only collection access
+- **RESOLVED:** See [ADR-0003: External API Integration Strategy](docs/adr/0003-external-api-integration-strategy.md) - BGG username is a public identifier; no authentication required
 
 ### 14.3 GameUPC.com Integration
 
 **DESIGN DECISION CONFIRMED:** Barcode (UPC) information comes exclusively from mobile app scans via GameUPC.com API. BoardGameGeek.com data does not contain barcode information. When a barcode is scanned, the system will check if the game exists in the user's collection and either update the existing record with UPC info or create a new record.
 
-**ISSUE-020: GameUPC API Access - RESOLVED**
+**Implementation Strategy:** See [ADR-0003: External API Integration Strategy](docs/adr/0003-external-api-integration-strategy.md) for API access details, UPC coverage handling, and community contribution model.
 
-- **Research completed:** GameUPC.com API documentation and REST API reviewed
-- **Findings:**
-  - **Completely FREE** - No API key required
-  - No documented rate limits
-  - Crowdsourced database with ~9,615 verified UPCs (42% verification rate)
-  - ~22,996 total human suggestions in database
-  - Open REST API at https://api.gameupc.com/
-- **Implementation:** Use GameUPC API for all barcode lookups without authentication
-- **Impact:** Zero cost for barcode integration, no API key management needed
-
-**ISSUE-021: UPC Coverage - RESOLVED**
-
-- **Finding:** ~42% of UPCs are verified (9,615 verified / 22,996 suggestions)
-- **API Response Types:**
-  - `bgg_info_status: "verified"` - Confidence 96+, use directly
-  - `bgg_info_status: "choose_from_bgg_info_or_search"` - User must select from options or search
-  - Not found - User must manually search BGG
-- **User Experience:**
-  - Verified barcodes: Instant add to collection
-  - Unverified: Show user 2-5 options from GameUPC response
-  - Missing: Fallback to manual BGG search in web app
-- **Community Contribution Feature:**
-  - Users can contribute UPC mappings back to GameUPC via our web application
-  - This improves the crowdsource database for all users
-  - See REQ-CM-020 through REQ-CM-024 for detailed requirements
-
-**ISSUE-022: GameUPC API Key - RESOLVED**
-
-- **Finding:** No API key required - GameUPC.com is completely open and free
-- **Action:** Remove all references to GameUPC API key from .env files and documentation
-- **Impact:** Simplified deployment, no credential management needed
+**Key Facts (from ADR-0003):**
+- GameUPC API is completely FREE with no authentication required
+- ~42% UPC verification rate (9,615 verified / 22,996 suggestions)
+- Users contribute mappings back via web app to improve community database
 
 **ISSUE-023: Game Matching Logic**
 
@@ -2013,6 +1965,7 @@ For architectural decisions, see the Architecture Decision Records (ADRs) in the
 - **Question:** What specific password complexity requirements should be enforced?
 - **Current assumption:** Minimum 8 characters
 - **Consideration:** Add requirement for mixed case, numbers, special characters?
+- **RESOLVED:** See [ADR-0004: Authentication and Security Policies](docs/adr/0004-authentication-and-security-policies.md) - 8-character minimum, no complexity requirements to reduce friction
 
 **ISSUE-052: GDPR Compliance**
 
@@ -2186,6 +2139,14 @@ For architectural decisions, see the Architecture Decision Records (ADRs) in the
 - **Consideration:** Could be perceived as nagging
 - **User preference:** Should be opt-in
 - **Decision needed by:** Phase 6
+
+**ISSUE-104: Bidirectional BGG Sync**
+
+- **Future Feature:** Sync lent/borrowed status, wishlist changes, or play logs back to BoardGameGeek
+- **Current Decision:** No bidirectional sync in MVP. BGG sync is one-way (BGG → our system)
+- **Rationale:** Reduces complexity, avoids sync conflicts, BGG API may not support write operations for all data
+- **Future Investigation:** Research BGG API capabilities for POST/PUT operations on user collections
+- **Decision needed by:** Post-MVP (if user demand exists)
 
 **ISSUE-104: Lending History Tracking**
 
