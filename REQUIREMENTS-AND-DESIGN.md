@@ -158,6 +158,18 @@ The system comprises:
 - **REQ-CM-025:** If game does not exist in collection, system must create new game record with full metadata
 - **REQ-CM-026:** System must handle invalid or unknown UPC codes
 - **REQ-CM-027:** System must associate scanned games with correct user account
+
+#### 3.2.4 GameUPC Community Contribution
+
+- **REQ-CM-030:** Users can contribute UPC/barcode mappings to GameUPC.com via web application
+- **REQ-CM-031:** Web app must provide "Link Barcode to Game" feature on game detail pages
+- **REQ-CM-032:** Users can manually enter UPC code and associate it with a game in their collection
+- **REQ-CM-033:** System must submit verified mappings back to GameUPC.com API to improve crowdsource database
+- **REQ-CM-034:** Collection screen must display informational banner about GameUPC crowdsourced data
+- **REQ-CM-035:** Banner must explain: "Barcode scanning uses crowdsourced data from GameUPC.com. You may be asked to help verify game information when scanning. You can also manually link barcodes to your games to help the community."
+- **REQ-CM-036:** User contributions must include unique user ID when submitting to GameUPC API
+- **REQ-CM-037:** System must handle GameUPC API submission errors gracefully
+- **REQ-CM-038:** System must provide feedback to users when their contribution is successfully submitted
 - **REQ-CM-028:** Same update/create logic applies when scanning in party list mode
 
 ### 3.3 Party Lists
@@ -447,6 +459,9 @@ The system comprises:
 │  Web App API                            │
 │                                         │
 │  2. Query BGG API with username        │
+│     - Wait 2 seconds between requests  │
+│     - Handle HTTP 202 (queued)         │
+│     - Poll every 2-5 seconds if queued │
 │     GET boardgamegeek.com/xmlapi2/...  │
 │                                         │
 └────────┬────────────────────────────────┘
@@ -898,9 +913,37 @@ Authorization: Bearer <API_KEY>
   2. Find game in user's collection
   3. Update is_lent to false
   4. Optionally archive lending history
+
+#### 7.4.5 GameUPC Community Contribution
+
+**POST /api/v1/collection/games/:game_id/link-barcode**
+
+- Link a UPC barcode to a game in user's collection
+- Request: `{ upc, user_contribution: true }`
+- Response: `{ game, gameupc_submission_status }`
+- Status: 200 OK
+- **Processing Logic:**
+  1. Validate UPC format (numeric, reasonable length)
+  2. Update game record in database with UPC
+  3. Submit mapping to GameUPC.com API:
+     - POST https://api.gameupc.com/upc/{upc}/bgg_id/{bgg_id}
+     - Include user_id in request body (anonymous hash of user ID)
+  4. Return success status and updated game
+- **Note:** This helps improve GameUPC.com crowdsource database for all users
+
+**GET /api/v1/collection/games/:game_id/suggest-barcodes**
+
+- Get suggested UPC barcodes from GameUPC for a specific game
+- Query params: `?search=<game_title>`
+- Response: `{ suggestions: [{ upc, confidence, bgg_info }] }`
+- Status: 200 OK
+- **Processing Logic:**
+  1. Query GameUPC.com with game title or BGG ID
+  2. Return list of potential UPC matches
+  3. User can select correct one and submit via link-barcode endpoint
   5. Return updated game status
 
-#### 7.4.5 Party Lists
+#### 7.4.6 Party Lists
 
 **GET /api/v1/party-lists**
 
@@ -967,7 +1010,7 @@ Authorization: Bearer <API_KEY>
 - Response: `{ compiled_games: [...], duplicates: [...] }`
 - Status: 200 OK
 
-#### 7.4.6 Game Requests
+#### 7.4.7 Game Requests
 
 **POST /api/v1/party-lists/:list_id/requests**
 
@@ -989,7 +1032,7 @@ Authorization: Bearer <API_KEY>
 - Response: `{ request }`
 - Status: 200 OK
 
-#### 7.4.7 Game Search
+#### 7.4.8 Game Search
 
 **GET /api/v1/games/search**
 
@@ -1067,8 +1110,12 @@ Authorization: Bearer <API_KEY>
 #### 8.2.4 Main Collection Screen
 
 - Header with app title, stats bar, user menu
+- **Informational Banner (collapsible):**
+  - "ℹ️ Barcode scanning uses crowdsourced data from GameUPC.com. You may be asked to help verify game information when scanning. You can also manually link barcodes to your games to help the community."
+  - Link to "How it works" explanation
+  - Dismiss button (stores preference)
 - Search and filter controls
-- Filter options: All / Available / Lent Out (future)
+- Filter options: All / Available / Lent Out (future) / Missing Barcode
 - "Sync from BoardGameGeek.com" button (prominent)
 - Results info (e.g., "Showing 24 of 156 games")
 - Game table with columns:
@@ -1077,11 +1124,28 @@ Authorization: Bearer <API_KEY>
   - Year
   - Players
   - Play Time
+  - Barcode Status (icon: ✓ if UPC present, "Link" button if missing)
   - Status (future: "Lent to [Person]" indicator)
   - Actions (View, Remove)
 - Visual indicator for lent games (future: badge or icon)
 - Pagination controls
 - Empty state: "Your collection is empty. Sync from BoardGameGeek or scan a barcode to get started."
+
+#### 8.2.4a Game Detail / Edit Screen
+
+- Game information display (title, year, players, etc.)
+- Collection notes editor
+- **Barcode Management Section:**
+  - If UPC exists: Display UPC with "Edit" button
+  - If UPC missing: "Link Barcode" form
+    - Manual UPC entry field
+    - "Search GameUPC" button to find suggestions
+    - Explanation: "Help the community by linking this game's barcode"
+  - Submit button to add/update UPC
+  - Success message: "Barcode linked! This helps other users too."
+- Acquisition date
+- Source indicator (BGG sync, manual, barcode)
+- Remove from collection button
 
 #### 8.2.5 Profile Screen
 
@@ -1812,11 +1876,23 @@ For architectural decisions, see the Architecture Decision Records (ADRs) in the
 
 **DESIGN DECISION CONFIRMED:** BoardGameGeek.com data does not contain barcode/UPC information. BGG sync will populate game metadata (title, year, players, images, etc.) but the UPC field will remain null until the game is scanned via the mobile app.
 
-**ISSUE-010: BGG API Rate Limits**
+**ISSUE-010: BGG API Rate Limits - RESOLVED**
 
-- **Question:** What are the specific rate limits for BGG API? How should we handle large collections?
-- **Research needed:** BGG API documentation review
-- **Impacts:** Sync functionality design
+- **Research completed:** BGG XML API documentation and community best practices reviewed
+- **Findings:**
+  - No explicit rate limits published by BGG
+  - BGG uses async queue system with HTTP 202 "Accepted" responses for large collections
+  - Collections cached for 7 days (or until user modifies collection)
+  - Community recommendation: 2-second delay between requests to be kind to BGG servers
+- **Implementation Requirements:**
+  - Implement retry logic with exponential backoff for HTTP 202 responses
+  - Add 2-second minimum delay between any BGG API calls
+  - Show user progress feedback: "Your collection has XXX games. This may take 30-60 seconds..."
+  - Cache BGG responses and only re-sync when user explicitly requests or >24 hours elapsed
+  - Prevent multiple simultaneous sync requests from same user
+  - Handle HTTP 202 by polling every 2-5 seconds until data is ready (HTTP 200)
+- **Rationale:** BGG is community-run with limited resources. Being a good API citizen ensures availability for all users.
+- **Impact:** Sync may take 5-60 seconds for first collection load (100+ games), but subsequent syncs are fast due to caching
 
 **ISSUE-011: Bidirectional Sync**
 
@@ -1836,23 +1912,39 @@ For architectural decisions, see the Architecture Decision Records (ADRs) in the
 
 **DESIGN DECISION CONFIRMED:** Barcode (UPC) information comes exclusively from mobile app scans via GameUPC.com API. BoardGameGeek.com data does not contain barcode information. When a barcode is scanned, the system will check if the game exists in the user's collection and either update the existing record with UPC info or create a new record.
 
-**ISSUE-020: GameUPC API Access**
+**ISSUE-020: GameUPC API Access - RESOLVED**
 
-- **Question:** What are the terms of service and rate limits for GameUPC.com?
-- **Research needed:** Review GameUPC.com API documentation
-- **Impacts:** Barcode scanning functionality
+- **Research completed:** GameUPC.com API documentation and REST API reviewed
+- **Findings:**
+  - **Completely FREE** - No API key required
+  - No documented rate limits
+  - Crowdsourced database with ~9,615 verified UPCs (42% verification rate)
+  - ~22,996 total human suggestions in database
+  - Open REST API at https://api.gameupc.com/
+- **Implementation:** Use GameUPC API for all barcode lookups without authentication
+- **Impact:** Zero cost for barcode integration, no API key management needed
 
-**ISSUE-021: UPC Coverage**
+**ISSUE-021: UPC Coverage - RESOLVED**
 
-- **Question:** What percentage of board games have UPC codes in GameUPC.com database?
-- **Fallback plan:** Manual entry for missing games
-- **Consideration:** Alternative UPC databases?
-- ANSWER: Let's added this as a future feature to the mobile application. If a UPC is not found i
+- **Finding:** ~42% of UPCs are verified (9,615 verified / 22,996 suggestions)
+- **API Response Types:**
+  - `bgg_info_status: "verified"` - Confidence 96+, use directly
+  - `bgg_info_status: "choose_from_bgg_info_or_search"` - User must select from options or search
+  - Not found - User must manually search BGG
+- **User Experience:**
+  - Verified barcodes: Instant add to collection
+  - Unverified: Show user 2-5 options from GameUPC response
+  - Missing: Fallback to manual BGG search in web app
+- **Community Contribution Feature:**
+  - Users can contribute UPC mappings back to GameUPC via our web application
+  - This improves the crowdsource database for all users
+  - See REQ-CM-020 through REQ-CM-024 for detailed requirements
 
-**ISSUE-022: GameUPC API Key**
+**ISSUE-022: GameUPC API Key - RESOLVED**
 
-- **Question:** How do we obtain a GameUPC.com API key? Any costs involved?
-- **Action required:** Contact GameUPC.com or review their developer documentation
+- **Finding:** No API key required - GameUPC.com is completely open and free
+- **Action:** Remove all references to GameUPC API key from .env files and documentation
+- **Impact:** Simplified deployment, no credential management needed
 
 **ISSUE-023: Game Matching Logic**
 
