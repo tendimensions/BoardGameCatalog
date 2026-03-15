@@ -3,6 +3,7 @@
 # =============================================================================
 #
 # Builds Android (APK) and iOS (IPA) and distributes via Firebase App Distribution.
+# Release notes are extracted from mobile/CHANGELOG.md (latest entry only).
 #
 # REQUIRED SECRETS — set these in CodeMagic → Teams → Global variables / secrets:
 #
@@ -40,6 +41,16 @@ workflows:
         - pattern: main
           include: true
     scripts:
+      - name: Extract release notes from CHANGELOG.md
+        script: |
+          # Pull the most recent entry (everything between the first and second ## heading)
+          # and write it to a file for the Firebase CLI --release-notes-file flag.
+          awk '/^## \[/{if(found) exit; found=1; next} found' mobile/CHANGELOG.md \
+            | sed '/^[[:space:]]*$/d' \
+            > /tmp/release_notes.txt
+          echo "--- release notes ---"
+          cat /tmp/release_notes.txt
+
       - name: Get packages
         script: flutter pub get
         working_directory: mobile
@@ -51,17 +62,17 @@ workflows:
             --build-number=$BUILD_NUMBER
         working_directory: mobile
 
+      - name: Distribute to Firebase App Distribution
+        script: |
+          firebase appdistribution:distribute \
+            mobile/build/app/outputs/flutter-apk/app-release.apk \
+            --app $FIREBASE_ANDROID_APP_ID \
+            --groups testers \
+            --release-notes-file /tmp/release_notes.txt \
+            --token $FIREBASE_TOKEN
+
     artifacts:
       - mobile/build/app/outputs/flutter-apk/app-release.apk
-
-    publishing:
-      firebase:
-        firebase_token: $FIREBASE_TOKEN
-        android:
-          app_id: $FIREBASE_ANDROID_APP_ID
-          groups:
-            - testers
-          artifact_type: apk
 
   # ── iOS ──────────────────────────────────────────────────────────────────────
   ios-release:
@@ -81,6 +92,14 @@ workflows:
         - pattern: main
           include: true
     scripts:
+      - name: Extract release notes from CHANGELOG.md
+        script: |
+          awk '/^## \[/{if(found) exit; found=1; next} found' mobile/CHANGELOG.md \
+            | sed '/^[[:space:]]*$/d' \
+            > /tmp/release_notes.txt
+          echo "--- release notes ---"
+          cat /tmp/release_notes.txt
+
       - name: Get packages
         script: flutter pub get
         working_directory: mobile
@@ -93,13 +112,14 @@ workflows:
             --export-options-plist=/Users/builder/export_options.plist
         working_directory: mobile
 
+      - name: Distribute to Firebase App Distribution
+        script: |
+          firebase appdistribution:distribute \
+            $(find mobile/build/ios/ipa -name '*.ipa') \
+            --app $FIREBASE_IOS_APP_ID \
+            --groups testers \
+            --release-notes-file /tmp/release_notes.txt \
+            --token $FIREBASE_TOKEN
+
     artifacts:
       - mobile/build/ios/ipa/*.ipa
-
-    publishing:
-      firebase:
-        firebase_token: $FIREBASE_TOKEN
-        ios:
-          app_id: $FIREBASE_IOS_APP_ID
-          groups:
-            - testers

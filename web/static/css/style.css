@@ -691,3 +691,14 @@ td:first-child { color: #f0f0f0; }
   .header-nav { gap: 10px; font-size: 0.8rem; }
   td { max-width: 160px; }
 }
+
+
+/* ── Footer ─────────────────────────────────────────────────────────────── */
+.site-footer {
+  text-align: center;
+  padding: 20px;
+  color: #444;
+  font-size: 0.78rem;
+  border-top: 1px solid #1e1e1e;
+  margin-top: 40px;
+}

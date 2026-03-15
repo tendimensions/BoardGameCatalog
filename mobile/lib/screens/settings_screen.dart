@@ -1,9 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  String _version = '—';
+
+  @override
+  void initState() {
+    super.initState();
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) {
+        setState(() => _version = '${info.version} (${info.buildNumber})');
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +54,7 @@ class SettingsScreen extends StatelessWidget {
             _InfoTile(
               icon: Icons.info_outline,
               label: 'Version',
-              value: '1.0.0',
+              value: _version,
             ),
             _InfoTile(
               icon: Icons.language,
