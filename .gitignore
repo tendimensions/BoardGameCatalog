@@ -29,8 +29,14 @@ logs/
 *.swp
 *.swo
 
-# macOS
+# OS
 .DS_Store
+Thumbs.db
+
+# Python test / coverage artifacts
+.pytest_cache/
+htmlcov/
+.coverage
 
 # Flutter / Dart
 mobile/.dart_tool/
@@ -38,7 +44,6 @@ mobile/.flutter-plugins
 mobile/.flutter-plugins-dependencies
 mobile/build/
 mobile/.packages
-mobile/pubspec.lock
 mobile/*.iml
 mobile/android/.gradle/
 mobile/android/local.properties

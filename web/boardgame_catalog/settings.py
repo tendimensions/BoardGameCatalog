@@ -17,6 +17,13 @@ ALLOWED_HOSTS = os.environ.get(
     'boardgames.tendimensions.com,localhost,127.0.0.1'
 ).split(',')
 
+# Required in Django 4.0+ when requests arrive via a proxy (Cloudflare).
+# Must include the scheme; comma-separated list in the env var.
+CSRF_TRUSTED_ORIGINS = os.environ.get(
+    'CSRF_TRUSTED_ORIGINS',
+    'https://boardgames.tendimensions.com'
+).split(',')
+
 # Full URL used when constructing links in emails
 SITE_URL = os.environ.get('SITE_URL', 'http://localhost:8000')
 
@@ -34,6 +41,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -110,6 +118,11 @@ MS_GRAPH_CLIENT_ID = os.environ.get('MS_GRAPH_CLIENT_ID', '')
 MS_GRAPH_CLIENT_SECRET = os.environ.get('MS_GRAPH_CLIENT_SECRET', '')
 MS_GRAPH_SENDER = os.environ.get('MS_GRAPH_SENDER', 'noreply@tendimensions.com')
 
+# ── External APIs ──────────────────────────────────────────────────────────────
+# BGG XML API v2 — bearer token required as of 2025.
+# Register at: https://boardgamegeek.com/using_the_xml_api
+BGG_API_TOKEN = os.environ.get('BGG_API_TOKEN', '')
+
 DEFAULT_FROM_EMAIL = MS_GRAPH_SENDER
 
 # ── Django REST Framework ──────────────────────────────────────────────────────
@@ -123,7 +136,6 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
     ],
-    'DEFAULT_VERSIONING_CLASS': 'rest_framework.versioning.NamespaceVersioning',
 }
 
 # ── Session ────────────────────────────────────────────────────────────────────
@@ -131,11 +143,13 @@ SESSION_COOKIE_AGE = 60 * 60 * 24 * 14  # 2 weeks
 
 # ── Production security headers ────────────────────────────────────────────────
 if not DEBUG:
-    SECURE_SSL_REDIRECT = True
+    # SSL is terminated by Cloudflare, not by this server.
+    # nginx hardcodes X-Forwarded-Proto: https so Django treats requests as
+    # secure without needing to redirect HTTP→HTTPS itself (Cloudflare already
+    # enforces HTTPS at the edge; redirecting here would cause a loop).
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = False
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'

@@ -3,25 +3,31 @@
 # Board Game Catalog — One-time server setup for boardgames.tendimensions.com
 # =============================================================================
 #
-# Run this script ONCE on the Linode to create the nginx virtual host that
-# routes traffic for boardgames.tendimensions.com to the Docker container.
+# Run this script ONCE on the Linode after the tendimensions-web container
+# has been moved off port 80.  It creates nginx virtual host configs that
+# route traffic by hostname to the correct Docker container.
 #
-# Usage (run directly on the server, or pipe through SSH from your machine):
+# SSL is handled entirely by Cloudflare.  This server only speaks HTTP on
+# port 80.  Do NOT run certbot here.
 #
+# Usage:
 #   On the server:
-#     sudo bash ~/server-setup.sh
+#     sudo bash ~/boardgames/server-setup.sh
 #
 #   From your Windows machine:
-#     scp server-setup.sh user@<linode-ip>:~/
-#     ssh user@<linode-ip> "sudo bash ~/server-setup.sh"
+#     scp web/server-setup.sh user@ssh.tendimensions.com:~/boardgames/
+#     ssh user@ssh.tendimensions.com "sudo bash ~/boardgames/server-setup.sh"
 #
-#   To add SSL after DNS has propagated (run again with --with-ssl):
-#     ssh user@<linode-ip> "sudo bash ~/server-setup.sh --with-ssl"
-#
-# Prerequisites on the server:
+# Prerequisites:
 #   - nginx installed  (sudo apt install nginx)
 #   - Docker + docker compose installed
-#   - The deploy.ps1 deployment run at least once so the container exists
+#   - tendimensions-web container moved to 127.0.0.1:8080  (see below)
+#   - boardgame_catalog container running on 127.0.0.1:8000
+#
+# Before running this script, update ~/Website/docker-compose.yml:
+#   Change:  - "80:80"
+#   To:      - "127.0.0.1:8080:80"
+#   Then:    cd ~/Website && docker compose up -d
 #
 # =============================================================================
 
@@ -29,30 +35,10 @@ set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-DOMAIN="boardgames.tendimensions.com"
-CONTAINER_PORT="8000"
-NGINX_AVAILABLE="/etc/nginx/sites-available/${DOMAIN}"
-NGINX_ENABLED="/etc/nginx/sites-enabled/${DOMAIN}"
-WITH_SSL=false
-
-# ── Argument parsing ──────────────────────────────────────────────────────────
-
-for arg in "$@"; do
-  case $arg in
-    --with-ssl) WITH_SSL=true ;;
-    --help|-h)
-      echo "Usage: sudo bash server-setup.sh [--with-ssl]"
-      echo ""
-      echo "  (no flag)    Create HTTP-only nginx config. Run this first."
-      echo "  --with-ssl   Run certbot to add HTTPS. Run after DNS has propagated."
-      exit 0
-      ;;
-    *)
-      echo "Unknown argument: $arg  (use --help)" >&2
-      exit 1
-      ;;
-  esac
-done
+BOARDGAMES_DOMAIN="boardgames.tendimensions.com"
+MAIN_DOMAIN="tendimensions.com"
+BOARDGAMES_PORT="8000"
+MAIN_PORT="8080"
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
 
@@ -79,161 +65,162 @@ if ! command -v nginx &>/dev/null; then
 fi
 ok "nginx found: $(nginx -v 2>&1 | head -1)"
 
-# ── Port conflict check ───────────────────────────────────────────────────────
+# ── Port 80 free? (must be free for host nginx to bind) ──────────────────────
 
-step "Checking port ${CONTAINER_PORT}..."
-if ss -tlnp 2>/dev/null | grep -q ":${CONTAINER_PORT} " || \
-   netstat -tlnp 2>/dev/null | grep -q ":${CONTAINER_PORT} "; then
-  warn "Something is already listening on port ${CONTAINER_PORT}."
-  warn "If it is not the boardgame_catalog container, you may have a conflict."
-  warn "Check with:  ss -tlnp | grep :${CONTAINER_PORT}"
+step "Checking port 80..."
+if ss -tlnp 2>/dev/null | grep -q ":80 "; then
+  fail "Something is already listening on port 80."
+  echo ""
+  echo "     Port 80 must be free before host nginx can start."
+  echo "     If tendimensions-web is still bound to 0.0.0.0:80, fix it first:"
+  echo ""
+  echo "       1. Edit ~/Website/docker-compose.yml"
+  echo "            Change:  - \"80:80\""
+  echo "            To:      - \"127.0.0.1:8080:80\""
+  echo "       2. cd ~/Website && docker compose up -d"
+  echo ""
+  exit 1
+fi
+ok "Port 80 is free"
+
+# ── Check containers are running ─────────────────────────────────────────────
+
+step "Checking Docker containers..."
+
+if docker ps --format '{{.Names}}' | grep -q "^boardgame_catalog$"; then
+  ok "boardgame_catalog is running on port ${BOARDGAMES_PORT}"
 else
-  ok "Port ${CONTAINER_PORT} looks free (container will bind to it)"
+  warn "boardgame_catalog container is not running."
+  warn "Deploy the app first:  .\\deploy.ps1 -Ssh user@ssh.tendimensions.com"
 fi
 
-# ── SSL branch: run certbot and exit ─────────────────────────────────────────
-
-if [[ "$WITH_SSL" == "true" ]]; then
-  step "Setting up SSL with Certbot for ${DOMAIN}..."
-
-  if ! command -v certbot &>/dev/null; then
-    fail "certbot is not installed."
-    echo "     Install it with:"
-    echo "       sudo apt install -y certbot python3-certbot-nginx"
-    exit 1
-  fi
-
-  # Verify DNS resolves to this machine before requesting a certificate
-  step "Checking DNS resolution for ${DOMAIN}..."
-  SERVER_IP=$(curl -s -4 https://ifconfig.me 2>/dev/null || curl -s -4 https://icanhazip.com 2>/dev/null || echo "UNKNOWN")
-  DOMAIN_IP=$(getent hosts "${DOMAIN}" | awk '{print $1}' 2>/dev/null || echo "UNRESOLVED")
-
-  if [[ "$SERVER_IP" == "UNKNOWN" ]]; then
-    warn "Could not determine this server's public IP. Proceeding anyway."
-  elif [[ "$DOMAIN_IP" != "$SERVER_IP" ]]; then
-    warn "${DOMAIN} resolves to ${DOMAIN_IP}, but this server's IP is ${SERVER_IP}."
-    warn "DNS has not propagated yet, or the A record is pointing elsewhere."
-    warn "Certbot will fail if DNS does not point here. Continue anyway? (y/N)"
-    read -r confirm
-    [[ "$confirm" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 1; }
-  else
-    ok "DNS for ${DOMAIN} → ${DOMAIN_IP} (matches this server)"
-  fi
-
-  certbot --nginx \
-    --non-interactive \
-    --agree-tos \
-    --redirect \
-    --domain "${DOMAIN}" \
-    --email "admin@tendimensions.com"
-
-  ok "Certbot complete. nginx has been updated for HTTPS."
-  echo ""
-  echo "  Certbot auto-renewal is managed by a systemd timer."
-  echo "  Verify with:  sudo systemctl status certbot.timer"
-  echo ""
-  nginx -t && systemctl reload nginx
-  ok "nginx reloaded with SSL config"
-  exit 0
+if docker ps --format '{{.Names}}' | grep -q "^tendimensions-web$"; then
+  ok "tendimensions-web is running"
+else
+  warn "tendimensions-web container is not running."
 fi
 
-# ── Create HTTP-only nginx config ─────────────────────────────────────────────
+# ── Write nginx config: boardgames.tendimensions.com ─────────────────────────
 
-step "Writing nginx config for ${DOMAIN}..."
+step "Writing nginx config for ${BOARDGAMES_DOMAIN}..."
 
-if [[ -f "$NGINX_AVAILABLE" ]]; then
-  warn "Config already exists at ${NGINX_AVAILABLE}. Overwriting."
-fi
+NGINX_BOARDGAMES="/etc/nginx/sites-available/${BOARDGAMES_DOMAIN}"
 
-cat > "$NGINX_AVAILABLE" << NGINX_EOF
-# Board Game Catalog — ${DOMAIN}
+cat > "${NGINX_BOARDGAMES}" << NGINX_EOF
+# Board Game Catalog — ${BOARDGAMES_DOMAIN}
 # Generated by server-setup.sh
-# Run "sudo bash server-setup.sh --with-ssl" after DNS propagates to add HTTPS.
+# SSL is handled by Cloudflare — no HTTPS config needed here.
 
 server {
     listen 80;
     listen [::]:80;
-    server_name ${DOMAIN};
-
-    # Let Certbot handle its ACME challenge without proxying
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
+    server_name ${BOARDGAMES_DOMAIN};
 
     location / {
-        proxy_pass         http://127.0.0.1:${CONTAINER_PORT};
+        proxy_pass         http://127.0.0.1:${BOARDGAMES_PORT};
         proxy_http_version 1.1;
 
         proxy_set_header   Host              \$host;
         proxy_set_header   X-Real-IP         \$remote_addr;
         proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto \$scheme;
+
+        # Hardcoded https because Cloudflare always delivers HTTPS to end users.
+        # Django reads this header to treat requests as secure without redirecting.
+        proxy_set_header   X-Forwarded-Proto https;
 
         # Timeouts — BGG sync can take up to 60 s for large collections
         proxy_read_timeout    90s;
         proxy_connect_timeout 10s;
         proxy_send_timeout    90s;
 
-        # Allow reasonably large uploads (game images, etc.)
         client_max_body_size 10M;
     }
 }
 NGINX_EOF
 
-ok "Config written to ${NGINX_AVAILABLE}"
+ok "Config written to ${NGINX_BOARDGAMES}"
 
-# ── Enable the site ───────────────────────────────────────────────────────────
+# ── Write nginx config: tendimensions.com ────────────────────────────────────
 
-step "Enabling site..."
+step "Writing nginx config for ${MAIN_DOMAIN}..."
 
-if [[ -L "$NGINX_ENABLED" ]]; then
-  warn "Symlink already exists at ${NGINX_ENABLED}. Skipping."
-else
-  ln -s "$NGINX_AVAILABLE" "$NGINX_ENABLED"
-  ok "Symlink created: ${NGINX_ENABLED}"
+NGINX_MAIN="/etc/nginx/sites-available/${MAIN_DOMAIN}"
+
+cat > "${NGINX_MAIN}" << NGINX_EOF
+# Main website — ${MAIN_DOMAIN}
+# Generated by server-setup.sh
+# Proxies to the tendimensions-web Docker container on port ${MAIN_PORT}.
+# Internal routing (e.g. umami analytics) is handled by that container's nginx.
+# SSL is handled by Cloudflare.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${MAIN_DOMAIN} www.${MAIN_DOMAIN};
+
+    location / {
+        proxy_pass         http://127.0.0.1:${MAIN_PORT};
+        proxy_http_version 1.1;
+
+        proxy_set_header   Host              \$host;
+        proxy_set_header   X-Real-IP         \$remote_addr;
+        proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto https;
+    }
+}
+NGINX_EOF
+
+ok "Config written to ${NGINX_MAIN}"
+
+# ── Enable both sites ─────────────────────────────────────────────────────────
+
+step "Enabling sites..."
+
+for DOMAIN in "${BOARDGAMES_DOMAIN}" "${MAIN_DOMAIN}"; do
+  LINK="/etc/nginx/sites-enabled/${DOMAIN}"
+  if [[ -L "${LINK}" ]]; then
+    warn "Symlink already exists for ${DOMAIN}. Skipping."
+  else
+    ln -s "/etc/nginx/sites-available/${DOMAIN}" "${LINK}"
+    ok "Enabled: ${DOMAIN}"
+  fi
+done
+
+# ── Disable default site (it conflicts as a catch-all) ───────────────────────
+
+if [[ -L /etc/nginx/sites-enabled/default ]]; then
+  rm /etc/nginx/sites-enabled/default
+  ok "Removed default catch-all site"
 fi
 
-# ── Make certbot root dir (needed before certbot runs) ────────────────────────
-
-mkdir -p /var/www/certbot
-
-# ── Test and reload nginx ─────────────────────────────────────────────────────
+# ── Test and start nginx ──────────────────────────────────────────────────────
 
 step "Testing nginx configuration..."
 if nginx -t 2>&1; then
   ok "nginx config valid"
 else
-  fail "nginx config has errors — see output above. Rolling back."
-  rm -f "$NGINX_ENABLED"
+  fail "nginx config has errors — see output above."
   exit 1
 fi
 
-step "Reloading nginx..."
-systemctl reload nginx
-ok "nginx reloaded"
+step "Starting nginx..."
+systemctl enable nginx
+systemctl start nginx
+ok "nginx started and enabled on boot"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 echo ""
 echo -e "${GREEN}  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}  nginx is now routing ${DOMAIN} → localhost:${CONTAINER_PORT}${NC}"
+echo -e "${GREEN}  nginx is routing traffic:${NC}"
 echo ""
-echo    "  Next steps:"
-echo    ""
-echo    "  1. Register the DNS A record for ${DOMAIN}"
-echo    "     pointing to this server's IP:  $(curl -s -4 https://ifconfig.me 2>/dev/null || echo '<your-linode-ip>')"
-echo    ""
-echo    "  2. Deploy the application (from your Windows machine):"
-echo    "     .\\deploy.ps1 -Ssh <user>@<linode-ip>"
-echo    ""
-echo    "  3. Once DNS has propagated, add HTTPS:"
-echo    "     sudo apt install -y certbot python3-certbot-nginx"
-echo    "     sudo bash ~/server-setup.sh --with-ssl"
-echo    ""
+echo    "    https://${BOARDGAMES_DOMAIN}  →  localhost:${BOARDGAMES_PORT} (boardgame_catalog)"
+echo    "    https://${MAIN_DOMAIN}         →  localhost:${MAIN_PORT} (tendimensions-web)"
+echo ""
 echo    "  Useful diagnostics:"
 echo    "     sudo nginx -t                          # validate config"
 echo    "     sudo systemctl status nginx            # nginx health"
 echo    "     docker logs boardgame_catalog          # app logs"
-echo    "     curl -H 'Host: ${DOMAIN}' http://localhost/  # test proxy"
+echo    "     docker logs tendimensions-web          # main site logs"
 echo -e "${GREEN}  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""

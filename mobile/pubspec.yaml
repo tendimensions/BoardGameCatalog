@@ -1,0 +1,46 @@
+name: boardgamecatalog
+description: "Board Game Catalog — manage your collection and scan barcodes."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # HTTP
+  http: ^1.2.2
+
+  # Secure storage for API key (Keychain on iOS, Keystore on Android)
+  flutter_secure_storage: ^9.2.2
+
+  # Barcode scanning
+  mobile_scanner: ^6.0.5
+
+  # Audio feedback on successful scan
+  audioplayers: ^6.1.0
+
+  # Offline collection cache
+  shared_preferences: ^2.3.3
+
+  # Game thumbnail images with caching
+  cached_network_image: ^3.4.1
+
+  # State management
+  provider: ^6.1.2
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/sounds/beep_success.mp3
+    - assets/sounds/beep_error.mp3

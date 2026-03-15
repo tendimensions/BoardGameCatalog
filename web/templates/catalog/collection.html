@@ -27,20 +27,83 @@
   {% endif %}
 
   {# ── BGG Sync bar (REQ-CM-010) ── #}
+  {# The sync fetches BGG XML client-side (avoids server IP blocks) then POSTs it to Django. #}
   <div class="sync-bar">
-    <form method="post" action="{% url 'catalog:sync_bgg' %}" id="sync-form">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-primary" id="sync-btn"
-              {% if not request.user.bgg_username %}title="No BGG username on account"{% endif %}>
-        ↻ Sync from BoardGameGeek.com
-      </button>
-    </form>
+    <button class="btn btn-primary" id="sync-btn"
+            {% if not request.user.bgg_username %}disabled title="No BGG username on account"{% endif %}
+            onclick="syncFromBGG()">
+      ↻ Sync from BoardGameGeek.com
+    </button>
     {% if request.user.bgg_username %}
     <span style="color:#555; font-size:0.82rem">BGG: {{ request.user.bgg_username }}</span>
     {% else %}
     <span style="color:#555; font-size:0.78rem">No BGG username set — sync unavailable</span>
     {% endif %}
   </div>
+
+  <script>
+  async function syncFromBGG() {
+    const btn = document.getElementById('sync-btn');
+    const bggUrl = 'https://boardgamegeek.com/xmlapi2/collection'
+                 + '?username={{ request.user.bgg_username|escapejs }}'
+                 + '&excludesubtype=boardgameexpansion&stats=1';
+
+    btn.disabled = true;
+    btn.textContent = '↻ Connecting to BGG…';
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    function showError(msg) {
+      btn.disabled = false;
+      btn.textContent = '↻ Sync from BoardGameGeek.com';
+      const el = document.createElement('div');
+      el.className = 'message message-error';
+      el.textContent = msg;
+      const wrap = document.querySelector('.page-wrap');
+      wrap.insertBefore(el, wrap.firstChild);
+    }
+
+    // Fetch BGG XML from the browser (residential IP, not blocked)
+    let xml = null;
+    for (let attempt = 1; attempt <= 8; attempt++) {
+      if (attempt > 1) {
+        btn.textContent = `↻ BGG is preparing your collection… (${attempt}/8)`;
+        await sleep(5000);
+      }
+      let resp;
+      try {
+        resp = await fetch(bggUrl);
+      } catch (e) {
+        showError('Could not reach BoardGameGeek. Check your connection and try again.');
+        return;
+      }
+      if (resp.status === 200) { xml = await resp.text(); break; }
+      if (resp.status === 202) { continue; }
+      showError(`BoardGameGeek returned an unexpected response (HTTP ${resp.status}). Please try again later.`);
+      return;
+    }
+
+    if (!xml) {
+      showError('BGG is still preparing your collection. Please wait a moment and try again.');
+      return;
+    }
+
+    // POST the XML to Django for parsing and database sync
+    btn.textContent = '↻ Importing games…';
+    const form = new FormData();
+    form.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    form.append('xml_data', xml);
+
+    try {
+      await fetch('{% url "catalog:sync_bgg" %}', { method: 'POST', body: form });
+    } catch (e) {
+      showError(`Server error: ${e.message}`);
+      return;
+    }
+
+    window.location.href = '{% url "catalog:collection" %}';
+  }
+  </script>
 
   {# ── Search & filter controls ── #}
   <div id="filters">
