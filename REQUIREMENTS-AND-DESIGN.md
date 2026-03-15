@@ -1803,31 +1803,10 @@ find ${BACKUP_DIR} -name "backup_*.db" -mtime +30 -delete
 
 ### 14.1 Technology Stack Decisions
 
-**✅ RESOLVED - ISSUE-001: Web Framework Selection**
+For architectural decisions, see the Architecture Decision Records (ADRs) in the `docs/adr/` directory:
 
-- **Decision:** Django 5.0+
-- **Rationale:**
-  - Sole developer → need maximum development speed
-  - Built-in authentication, email, admin interface
-  - Django ORM excellent for complex relationships (8+ tables)
-  - Security best practices built-in (CSRF, XSS, SQL injection protection)
-  - 14-week timeline requires batteries-included framework
-  - Python preference confirmed
-  - Seamless SQLite → PostgreSQL migration path
-- **Decided:** March 15, 2026
-
-**✅ RESOLVED - ISSUE-002: Frontend Framework**
-
-- **Decision:** Server-Side Rendering (Django Templates) + HTMX
-- **Rationale:**
-  - Solo developer → single codebase (Python) maximizes velocity
-  - Requirements analysis: no features require SPA architecture
-  - HTMX provides SPA-like interactivity without build tools
-  - Progressive enhancement approach (start simple, add as needed)
-  - Django admin works seamlessly with SSR
-  - Mobile app provides "app-like" experience already
-  - Can add React/Vue later if truly needed (Phase 6+)
-- **Decided:** March 15, 2026
+- **[ADR-0001: Use Django as Web Framework](docs/adr/0001-use-django-as-web-framework.md)** - Django 5.0+ selected for development velocity, built-in features, and solo developer context
+- **[ADR-0002: Use Server-Side Rendering with HTMX](docs/adr/0002-use-server-side-rendering-with-htmx.md)** - SSR with HTMX/Alpine.js for simplicity and development speed
 
 ### 14.2 BoardGameGeek.com Integration
 
