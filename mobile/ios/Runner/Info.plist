@@ -6,15 +6,12 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Board Game Catalog uses your camera to scan game barcodes.</string>
 
-	<key>CFBundleDisplayName</key>
-	<string>BG Catalog</string>
-
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Boardgamecatalog</string>
+	<string>Board Game Catalog</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

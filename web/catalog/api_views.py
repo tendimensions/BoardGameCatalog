@@ -215,6 +215,7 @@ class BarcodeScanView(APIView):
             # Create a brand-new game record
             game = Game.objects.create(
                 upc=upc,
+                bgg_id=result.bgg_id,
                 title=result.title,
                 year_published=result.year_published,
                 min_players=result.min_players,

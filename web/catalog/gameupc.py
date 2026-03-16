@@ -2,10 +2,14 @@
 GameUPC.com API client.
 
 GameUPC is a crowdsourced barcode → board game database.
-Endpoint: https://www.gameupc.com/api/v1/
+API base: https://api.gameupc.com/v1/  (production)
+          https://api.gameupc.com/test/ (test — free, periodically wiped)
+
+Authentication: x-api-key header.
+  - Test key:       test_test_test_test_test  (use with /test/ base)
+  - Production key: email gameupc@grettir.org to request access.
 
 Used exclusively by the mobile app barcode scan flow (REQ-CM-020 through REQ-CM-024).
-The web app may also call this to submit community UPC contributions (REQ-CM-030 through REQ-CM-037).
 """
 
 import logging
@@ -13,17 +17,32 @@ from dataclasses import dataclass
 from typing import Optional
 
 import requests
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-_BASE = 'https://www.gameupc.com/api/v1'
 _TIMEOUT = 10
+
+
+def _base_url() -> str:
+    key = getattr(settings, 'GAMEUPC_API_KEY', '')
+    if not key or key.startswith('CHANGE-ME'):
+        return 'https://api.gameupc.com/test'
+    return 'https://api.gameupc.com/v1'
+
+
+def _api_key() -> str:
+    key = getattr(settings, 'GAMEUPC_API_KEY', '')
+    if not key or key.startswith('CHANGE-ME'):
+        return 'test_test_test_test_test'
+    return key
 
 
 @dataclass
 class GameUPCResult:
     upc: str
     title: str
+    bgg_id: Optional[int]
     year_published: Optional[int]
     min_players: Optional[int]
     max_players: Optional[int]
@@ -48,9 +67,10 @@ def lookup_barcode(upc: str) -> GameUPCResult:
     Raises GameNotFound if the barcode is not in the database.
     Raises GameUPCError on network or API errors.
     """
-    url = f'{_BASE}/game/{upc}'
+    url = f'{_base_url()}/upc/{upc}'
+    headers = {'x-api-key': _api_key()}
     try:
-        resp = requests.get(url, timeout=_TIMEOUT)
+        resp = requests.get(url, headers=headers, timeout=_TIMEOUT)
     except requests.RequestException as exc:
         raise GameUPCError(f'Could not reach GameUPC: {exc}') from exc
 
@@ -63,32 +83,37 @@ def lookup_barcode(upc: str) -> GameUPCResult:
 
     data = resp.json()
 
+    # "new: true" means the UPC is not in the database yet
+    if data.get('new') or not data.get('bgg_info'):
+        raise GameNotFound(f'No game found for barcode {upc}')
+
+    # Take the highest-confidence result (first entry)
+    game = data['bgg_info'][0]
+
     return GameUPCResult(
         upc=upc,
-        title=data.get('name') or data.get('title') or 'Unknown',
-        year_published=_int_or_none(data.get('year') or data.get('year_published')),
-        min_players=_int_or_none(data.get('min_players')),
-        max_players=_int_or_none(data.get('max_players')),
-        playing_time=_int_or_none(data.get('playing_time')),
-        thumbnail_url=data.get('thumbnail') or data.get('thumbnail_url') or '',
-        image_url=data.get('image') or data.get('image_url') or '',
+        title=game.get('name') or game.get('title') or 'Unknown',
+        bgg_id=_int_or_none(game.get('bgg_id') or game.get('id')),
+        year_published=_int_or_none(game.get('year_published') or game.get('year')),
+        min_players=_int_or_none(game.get('min_players')),
+        max_players=_int_or_none(game.get('max_players')),
+        playing_time=_int_or_none(game.get('playing_time')),
+        thumbnail_url=game.get('thumbnail') or game.get('thumbnail_url') or '',
+        image_url=game.get('image') or game.get('image_url') or '',
     )
 
 
 def submit_barcode_mapping(upc: str, game_bgg_id: int, user_id: int) -> bool:
     """
     Submit a user-verified UPC → game mapping back to GameUPC (REQ-CM-033, REQ-CM-036).
+    Uses POST /upc/{upc}/bgg_id/{bgg_id} — the community voting endpoint.
 
     Returns True on success, False on failure (errors are non-fatal).
     """
-    url = f'{_BASE}/game'
-    payload = {
-        'upc': upc,
-        'bgg_id': game_bgg_id,
-        'user_id': user_id,
-    }
+    url = f'{_base_url()}/upc/{upc}/bgg_id/{game_bgg_id}'
+    headers = {'x-api-key': _api_key()}
     try:
-        resp = requests.post(url, json=payload, timeout=_TIMEOUT)
+        resp = requests.post(url, headers=headers, timeout=_TIMEOUT)
         if resp.status_code in (200, 201):
             logger.info('GameUPC mapping submitted: UPC %s → BGG %s', upc, game_bgg_id)
             return True

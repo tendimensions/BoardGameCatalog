@@ -196,7 +196,20 @@ class _ScannerScreenState extends State<ScannerScreen>
                   child: ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     itemCount: _history.length,
-                    itemBuilder: (_, i) => ScanResultCard(result: _history[i]),
+                    itemBuilder: (_, i) => Dismissible(
+                      key: ValueKey('${_history[i].upc}_$i'),
+                      direction: DismissDirection.startToEnd,
+                      background: Container(
+                        color: const Color(0xFF5a1a1a),
+                        alignment: Alignment.centerLeft,
+                        padding: const EdgeInsets.only(left: 20),
+                        child: const Icon(Icons.delete_outline,
+                            color: Color(0xFFe57373)),
+                      ),
+                      onDismissed: (_) =>
+                          setState(() => _history.removeAt(i)),
+                      child: ScanResultCard(result: _history[i]),
+                    ),
                   ),
                 ),
               ],

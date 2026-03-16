@@ -123,6 +123,7 @@ MS_GRAPH_SENDER = os.environ.get('MS_GRAPH_SENDER', 'noreply@tendimensions.com')
 # BGG XML API v2 — bearer token required as of 2025.
 # Register at: https://boardgamegeek.com/using_the_xml_api
 BGG_API_TOKEN = os.environ.get('BGG_API_TOKEN', '')
+GAMEUPC_API_KEY = os.environ.get('GAMEUPC_API_KEY', '')
 
 DEFAULT_FROM_EMAIL = MS_GRAPH_SENDER
 
