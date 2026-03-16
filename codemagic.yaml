@@ -65,8 +65,8 @@ workflows:
 
       - name: Distribute to Firebase App Distribution
         script: |
-          echo $FIREBASE_SERVICE_ACCOUNT | base64 --decode > /tmp/firebase-sa.json
-          GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-sa.json \
+          echo "$FIREBASE_SERVICE_ACCOUNT" | base64 --decode > /tmp/firebase-sa.json
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-sa.json
           firebase appdistribution:distribute \
             mobile/build/app/outputs/flutter-apk/app-release.apk \
             --app $FIREBASE_ANDROID_APP_ID \
@@ -105,13 +105,13 @@ workflows:
 
       - name: Install certificate and provisioning profile
         script: |
-          echo $CM_CERTIFICATE | base64 --decode > /tmp/certificate.p12
+          echo "$CM_CERTIFICATE" | base64 --decode > /tmp/certificate.p12
           keychain add-certificates \
             --certificate /tmp/certificate.p12 \
             --certificate-password "$CM_CERTIFICATE_PASSWORD"
           PROFILES_HOME="$HOME/Library/MobileDevice/Provisioning Profiles"
           mkdir -p "$PROFILES_HOME"
-          echo $CM_PROVISIONING_PROFILE | base64 --decode > \
+          echo "$CM_PROVISIONING_PROFILE" | base64 --decode > \
             "$PROFILES_HOME/$(uuidgen).mobileprovision"
 
       - name: Set up code signing
@@ -132,8 +132,8 @@ workflows:
 
       - name: Distribute to Firebase App Distribution
         script: |
-          echo $FIREBASE_SERVICE_ACCOUNT | base64 --decode > /tmp/firebase-sa.json
-          GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-sa.json \
+          echo "$FIREBASE_SERVICE_ACCOUNT" | base64 --decode > /tmp/firebase-sa.json
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-sa.json
           firebase appdistribution:distribute \
             $(find mobile/build/ios/ipa -name '*.ipa') \
             --app $FIREBASE_IOS_APP_ID \
