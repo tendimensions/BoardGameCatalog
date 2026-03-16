@@ -7,18 +7,21 @@
 #
 # REQUIRED SECRETS — set these in CodeMagic → Teams → Global variables / secrets:
 #
-#   FIREBASE_TOKEN            — Firebase CI token  (firebase login:ci)
-#   FIREBASE_ANDROID_APP_ID   — Android app ID from Firebase console
-#   FIREBASE_IOS_APP_ID       — iOS app ID from Firebase console
+#   Group: firebase_credentials
+#     FIREBASE_SERVICE_ACCOUNT   — GCP service account JSON (base64 encoded)
+#     FIREBASE_ANDROID_APP_ID    — Android app ID from Firebase console
+#     FIREBASE_IOS_APP_ID        — iOS app ID from Firebase console
 #
-#   CM_KEYSTORE               — Android keystore file (base64 encoded)
-#   CM_KEYSTORE_PASSWORD      — Keystore password
-#   CM_KEY_ALIAS              — Key alias
-#   CM_KEY_PASSWORD           — Key password
+#   Group: ios_signing
+#     CM_CERTIFICATE             — iOS distribution certificate (base64 encoded .p12)
+#     CM_CERTIFICATE_PASSWORD    — Certificate password
+#     CM_PROVISIONING_PROFILE    — Ad Hoc provisioning profile (base64 encoded .mobileprovision)
 #
-#   APP_STORE_CONNECT_API_KEY_KEY_ID        — App Store Connect API key ID
-#   APP_STORE_CONNECT_API_KEY_ISSUER_ID     — Issuer ID
-#   APP_STORE_CONNECT_API_KEY_PRIVATE_KEY   — Private key (.p8 contents)
+#   Group: android_signing (add when ready)
+#     CM_KEYSTORE                — Android keystore file (base64 encoded)
+#     CM_KEYSTORE_PASSWORD       — Keystore password
+#     CM_KEY_ALIAS               — Key alias
+#     CM_KEY_PASSWORD            — Key password
 #
 # =============================================================================
 
@@ -31,7 +34,7 @@ workflows:
     environment:
       flutter: stable
       android_signing:
-        - keystore_reference       # matches CM_KEYSTORE secret name in UI
+        - keystore_reference
       groups:
         - firebase_credentials
     triggering:
@@ -43,8 +46,6 @@ workflows:
     scripts:
       - name: Extract release notes from CHANGELOG.md
         script: |
-          # Pull the most recent entry (everything between the first and second ## heading)
-          # and write it to a file for the Firebase CLI --release-notes-file flag.
           awk '/^## \[/{if(found) exit; found=1; next} found' mobile/CHANGELOG.md \
             | sed '/^[[:space:]]*$/d' \
             > /tmp/release_notes.txt
@@ -64,12 +65,13 @@ workflows:
 
       - name: Distribute to Firebase App Distribution
         script: |
+          echo $FIREBASE_SERVICE_ACCOUNT | base64 --decode > /tmp/firebase-sa.json
+          GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-sa.json \
           firebase appdistribution:distribute \
             mobile/build/app/outputs/flutter-apk/app-release.apk \
             --app $FIREBASE_ANDROID_APP_ID \
             --groups testers \
-            --release-notes-file /tmp/release_notes.txt \
-            --token $FIREBASE_TOKEN
+            --release-notes-file /tmp/release_notes.txt
 
     artifacts:
       - mobile/build/app/outputs/flutter-apk/app-release.apk
@@ -85,6 +87,7 @@ workflows:
         bundle_identifier: com.tendimensions.boardgamecatalog
       groups:
         - firebase_credentials
+        - ios_signing
     triggering:
       events:
         - push
@@ -114,12 +117,13 @@ workflows:
 
       - name: Distribute to Firebase App Distribution
         script: |
+          echo $FIREBASE_SERVICE_ACCOUNT | base64 --decode > /tmp/firebase-sa.json
+          GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-sa.json \
           firebase appdistribution:distribute \
             $(find mobile/build/ios/ipa -name '*.ipa') \
             --app $FIREBASE_IOS_APP_ID \
             --groups testers \
-            --release-notes-file /tmp/release_notes.txt \
-            --token $FIREBASE_TOKEN
+            --release-notes-file /tmp/release_notes.txt
 
     artifacts:
       - mobile/build/ios/ipa/*.ipa
