@@ -82,9 +82,6 @@ workflows:
     max_build_duration: 60
     environment:
       flutter: stable
-      ios_signing:
-        distribution_type: ad_hoc
-        bundle_identifier: com.tendimensions.boardgamecatalog
       groups:
         - firebase_credentials
         - ios_signing
@@ -103,12 +100,26 @@ workflows:
           echo "--- release notes ---"
           cat /tmp/release_notes.txt
 
-      - name: Get packages
-        script: flutter pub get
-        working_directory: mobile
+      - name: Set up keychain
+        script: keychain initialize
+
+      - name: Install certificate and provisioning profile
+        script: |
+          echo $CM_CERTIFICATE | base64 --decode > /tmp/certificate.p12
+          keychain add-certificates \
+            --certificate /tmp/certificate.p12 \
+            --certificate-password "$CM_CERTIFICATE_PASSWORD"
+          PROFILES_HOME="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES_HOME"
+          echo $CM_PROVISIONING_PROFILE | base64 --decode > \
+            "$PROFILES_HOME/$(uuidgen).mobileprovision"
 
       - name: Set up code signing
         script: xcode-project use-profiles
+        working_directory: mobile
+
+      - name: Get packages
+        script: flutter pub get
         working_directory: mobile
 
       - name: Build IPA
