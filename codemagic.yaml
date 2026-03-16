@@ -108,6 +108,7 @@ workflows:
             --certificate-password "$CM_CERTIFICATE_PASSWORD"
           echo $CM_PROVISIONING_PROFILE | base64 --decode > /tmp/profile.mobileprovision
           xcode-project use-profiles --profile /tmp/profile.mobileprovision
+        working_directory: mobile
 
       - name: Get packages
         script: flutter pub get
