@@ -8,7 +8,7 @@
 # REQUIRED SECRETS — set these in CodeMagic → Teams → Global variables / secrets:
 #
 #   Group: firebase_credentials
-#     FIREBASE_SERVICE_ACCOUNT   — GCP service account JSON (base64 encoded)
+#     FIREBASE_SERVICE_ACCOUNT   — GCP service account JSON (raw JSON, not base64)
 #     FIREBASE_ANDROID_APP_ID    — Android app ID from Firebase console
 #     FIREBASE_IOS_APP_ID        — iOS app ID from Firebase console
 #
@@ -44,14 +44,6 @@ workflows:
         - pattern: main
           include: true
     scripts:
-      - name: Extract release notes from CHANGELOG.md
-        script: |
-          awk '/^## \[/{if(found) exit; found=1; next} found' mobile/CHANGELOG.md \
-            | sed '/^[[:space:]]*$/d' \
-            > /tmp/release_notes.txt
-          echo "--- release notes ---"
-          cat /tmp/release_notes.txt
-
       - name: Get packages
         script: flutter pub get
         working_directory: mobile
@@ -63,25 +55,26 @@ workflows:
             --build-number=$BUILD_NUMBER
         working_directory: mobile
 
-      - name: Distribute to Firebase App Distribution
-        script: |
-          echo "$FIREBASE_SERVICE_ACCOUNT" | base64 --decode > /tmp/firebase-sa.json
-          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-sa.json
-          firebase appdistribution:distribute \
-            mobile/build/app/outputs/flutter-apk/app-release.apk \
-            --app $FIREBASE_ANDROID_APP_ID \
-            --groups testers \
-            --release-notes-file /tmp/release_notes.txt
-
     artifacts:
       - mobile/build/app/outputs/flutter-apk/app-release.apk
+
+    publishing:
+      firebase:
+        firebase_service_account: $FIREBASE_SERVICE_ACCOUNT
+        android:
+          app_id: $FIREBASE_ANDROID_APP_ID
+          groups:
+            - testers
 
   # ── iOS ──────────────────────────────────────────────────────────────────────
   ios-release:
     name: iOS — Firebase Distribution
+    instance_type: mac_mini_m1
     max_build_duration: 60
     environment:
       flutter: stable
+      xcode: latest
+      cocoapods: default
       groups:
         - firebase_credentials
         - ios_signing
@@ -92,14 +85,6 @@ workflows:
         - pattern: main
           include: true
     scripts:
-      - name: Extract release notes from CHANGELOG.md
-        script: |
-          awk '/^## \[/{if(found) exit; found=1; next} found' mobile/CHANGELOG.md \
-            | sed '/^[[:space:]]*$/d' \
-            > /tmp/release_notes.txt
-          echo "--- release notes ---"
-          cat /tmp/release_notes.txt
-
       - name: Set up keychain
         script: keychain initialize
 
@@ -130,15 +115,13 @@ workflows:
             --export-options-plist=/Users/builder/export_options.plist
         working_directory: mobile
 
-      - name: Distribute to Firebase App Distribution
-        script: |
-          echo "$FIREBASE_SERVICE_ACCOUNT" | base64 --decode > /tmp/firebase-sa.json
-          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/firebase-sa.json
-          firebase appdistribution:distribute \
-            $(find mobile/build/ios/ipa -name '*.ipa') \
-            --app $FIREBASE_IOS_APP_ID \
-            --groups testers \
-            --release-notes-file /tmp/release_notes.txt
-
     artifacts:
       - mobile/build/ios/ipa/*.ipa
+
+    publishing:
+      firebase:
+        firebase_service_account: $FIREBASE_SERVICE_ACCOUNT
+        ios:
+          app_id: $FIREBASE_IOS_APP_ID
+          groups:
+            - testers
