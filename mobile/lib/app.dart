@@ -43,7 +43,7 @@ class _AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<_AppShell> {
-  int _selectedIndex = 0;
+  int _selectedIndex = 1;
 
   static const _tabs = [
     ScannerScreen(),
