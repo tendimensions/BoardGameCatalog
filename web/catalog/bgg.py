@@ -1,12 +1,10 @@
 """
 BoardGameGeek XML API v2 client.
 
-Production note: BGG blocks requests from cloud/data centre IP ranges (Linode,
-AWS, etc.).  For production use, the browser fetches the BGG XML directly and
-POSTs it to Django via SyncBGGView.  parse_collection_xml() handles that path.
-
-fetch_collection() makes a server-side request and works in local development
-where the machine has a residential IP.
+fetch_collection() performs a server-side request to BGG using the registered
+BGG_API_TOKEN (set in .env).  The token identifies the application to BGG and
+is required for all API access.  parse_collection_xml() is retained as a
+utility for testing with pre-fetched XML.
 """
 
 import logging
