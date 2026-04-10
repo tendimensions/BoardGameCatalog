@@ -116,8 +116,16 @@ class SyncBGGView(LoginRequiredMixin, View):
             )
             return redirect('catalog:collection')
 
+        # ── Parse XML posted from the browser ────────────────────────────────
+        # The browser fetches BGG directly (avoiding server-side IP blocks) and
+        # POSTs the raw XML here for processing.
+        xml_data = request.POST.get('xml_data', '').strip()
+        if not xml_data:
+            messages.error(request, 'No collection data received. Please try again.')
+            return redirect('catalog:collection')
+
         try:
-            bgg_games = bgg_client.fetch_collection(request.user.bgg_username)
+            bgg_games = bgg_client.parse_collection_xml(xml_data)
         except bgg_client.BGGError as exc:
             messages.error(request, f'BGG sync failed: {exc}')
             return redirect('catalog:collection')
