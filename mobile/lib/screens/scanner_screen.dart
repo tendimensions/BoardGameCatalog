@@ -5,8 +5,10 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 import '../models/scan_result.dart';
 import '../providers/auth_provider.dart';
+import '../providers/collection_provider.dart';
 import '../services/api_service.dart';
 import '../widgets/scan_result_card.dart';
+import 'link_barcode_screen.dart';
 
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key});
@@ -75,10 +77,12 @@ class _ScannerScreenState extends State<ScannerScreen>
       );
     } on ApiException catch (e) {
       await _audio.play(AssetSource('sounds/beep_error.mp3'), volume: 0.8);
+      // 404 with awaiting_link means the server saved the barcode for linking
+      final isAwaitingLink = e.statusCode == 404;
       result = ScanResult(
         upc: upc,
-        status: e.statusCode == 404 ? ScanStatus.notFound : ScanStatus.error,
-        errorMessage: e.message,
+        status: isAwaitingLink ? ScanStatus.awaitingLink : ScanStatus.error,
+        errorMessage: isAwaitingLink ? null : e.message,
       );
     } catch (_) {
       await _audio.play(AssetSource('sounds/beep_error.mp3'), volume: 0.8);
@@ -97,6 +101,51 @@ class _ScannerScreenState extends State<ScannerScreen>
 
     // Brief cooldown before accepting the next scan
     _cooldownTimer = Timer(const Duration(seconds: 2), () {});
+  }
+
+  /// Opens the link-barcode screen for an awaiting-link result.
+  /// On return, replaces the history entry with the outcome.
+  Future<void> _openLinkScreen(ScanResult result) async {
+    final apiKey = context.read<AuthProvider>().apiKey!;
+    final linked = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LinkBarcodeScreen(
+          upc: result.upc,
+          apiKey: apiKey,
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+
+    // Refresh collection if a link was made
+    if (linked == true) {
+      context.read<CollectionProvider>().load(apiKey);
+      setState(() {
+        final idx = _history.indexOf(result);
+        if (idx != -1) {
+          _history[idx] = ScanResult(
+            upc: result.upc,
+            status: ScanStatus.success,
+            addedToCollection: false,
+            errorMessage: null,
+          );
+        }
+      });
+    } else {
+      // User dismissed — mark as notFound in history
+      setState(() {
+        final idx = _history.indexOf(result);
+        if (idx != -1) {
+          _history[idx] = ScanResult(
+            upc: result.upc,
+            status: ScanStatus.notFound,
+            errorMessage: 'Not found in GameUPC — barcode discarded',
+          );
+        }
+      });
+    }
   }
 
   @override
@@ -208,7 +257,12 @@ class _ScannerScreenState extends State<ScannerScreen>
                       ),
                       onDismissed: (_) =>
                           setState(() => _history.removeAt(i)),
-                      child: ScanResultCard(result: _history[i]),
+                      child: GestureDetector(
+                        onTap: _history[i].status == ScanStatus.awaitingLink
+                            ? () => _openLinkScreen(_history[i])
+                            : null,
+                        child: ScanResultCard(result: _history[i]),
+                      ),
                     ),
                   ),
                 ),

@@ -14,10 +14,12 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from django.shortcuts import get_object_or_404
+
 from accounts.models import APIKey
 from . import gameupc as gameupc_client
 from .gameupc import GameNotFound, GameUPCError
-from .models import Game, UserCollection
+from .models import Game, UserCollection, UnlinkedBarcode
 from .serializers import CollectionItemSerializer, GameSerializer
 
 logger = logging.getLogger(__name__)
@@ -189,9 +191,20 @@ class BarcodeScanView(APIView):
         try:
             result = gameupc_client.lookup_barcode(upc)
         except GameNotFound:
+            # Save the barcode so the user can link it to a game (REQ-CM-040).
+            # update_or_create handles re-scans of the same unrecognised barcode.
+            UnlinkedBarcode.objects.update_or_create(
+                user=request.user,
+                upc=upc,
+                defaults={},
+            )
             return Response(
-                {'error': f'No game found for barcode {upc}. '
-                          'It may not be in the GameUPC database yet.'},
+                {
+                    'error': f'Barcode {upc} was not found in GameUPC. '
+                             'It has been saved — you can link it to a game in your collection.',
+                    'upc': upc,
+                    'awaiting_link': True,
+                },
                 status=status.HTTP_404_NOT_FOUND,
             )
         except GameUPCError as exc:
@@ -246,3 +259,109 @@ class BarcodeScanView(APIView):
             },
             status=http_status,
         )
+
+
+# ── Unknown barcode linking ───────────────────────────────────────────────────
+
+class LinkBarcodeView(APIView):
+    """
+    POST /api/v1/scan/link
+
+    Links a previously unrecognised barcode to a game in the user's collection
+    and submits the mapping to GameUPC.com as a community contribution
+    (REQ-CM-044 through REQ-CM-048).
+
+    Request:  { "upc": "012345678901", "game_id": 42 }
+    Response: { "game": {...}, "submitted_to_gameupc": bool }
+
+    The UnlinkedBarcode record is deleted on success.  The game's upc field
+    is stamped.  If the game has no bgg_id the GameUPC submission is skipped
+    (REQ-CM-047) and submitted_to_gameupc is false.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        upc = (request.data.get('upc') or '').strip()
+        game_id = request.data.get('game_id')
+
+        if not upc or not game_id:
+            return Response(
+                {'error': 'upc and game_id are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Verify the pending barcode belongs to this user (REQ-CM-040)
+        unlinked = get_object_or_404(UnlinkedBarcode, user=request.user, upc=upc)
+
+        # Game must be in the user's collection
+        try:
+            collection_item = (
+                UserCollection.objects
+                .select_related('game')
+                .get(user=request.user, game_id=game_id)
+            )
+        except UserCollection.DoesNotExist:
+            return Response(
+                {'error': 'Game not found in your collection.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        game = collection_item.game
+
+        if game.upc:
+            return Response(
+                {'error': 'This game already has a barcode linked.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        # Stamp the UPC onto the game record
+        game.upc = upc
+        game.save(update_fields=['upc', 'updated_at'])
+
+        # Submit to GameUPC if we have a BGG ID (REQ-CM-045, REQ-CM-047)
+        submitted = False
+        if game.bgg_id:
+            submitted = gameupc_client.submit_barcode_mapping(upc, game.bgg_id, request.user.id)
+            if submitted:
+                logger.info(
+                    'User %s linked barcode %s → game %s (BGG %s) and submitted to GameUPC',
+                    request.user.username, upc, game.title, game.bgg_id,
+                )
+            else:
+                logger.warning(
+                    'User %s linked barcode %s → game %s but GameUPC submission failed',
+                    request.user.username, upc, game.title,
+                )
+        else:
+            logger.info(
+                'User %s linked barcode %s → game %s (no BGG ID, skipping GameUPC)',
+                request.user.username, upc, game.title,
+            )
+
+        # Clean up the pending record (REQ-CM-048)
+        unlinked.delete()
+
+        return Response(
+            {
+                'game': GameSerializer(game).data,
+                'submitted_to_gameupc': submitted,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class DiscardBarcodeView(APIView):
+    """
+    DELETE /api/v1/scan/unlinked/<upc>
+
+    Discards a saved unlinked barcode without linking it to any game (REQ-CM-048).
+    Called when the user dismisses the linking interface.
+    Silent no-op if the record doesn't exist (e.g. already linked or timed out).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, upc):
+        UnlinkedBarcode.objects.filter(user=request.user, upc=upc).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

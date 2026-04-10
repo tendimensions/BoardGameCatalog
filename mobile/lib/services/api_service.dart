@@ -77,6 +77,8 @@ class ApiService {
   }
 
   /// Submits a barcode scan. Returns a [Game] and whether it was newly added.
+  /// Throws [ApiException] with statusCode 404 and awaitingLink=true when the
+  /// barcode is unknown — the server has saved it for later linking.
   Future<({Game game, bool addedToCollection})> scanBarcode(String upc) async {
     final resp = await http
         .post(
@@ -90,5 +92,32 @@ class ApiService {
       game: Game.fromJson(body['game'] as Map<String, dynamic>),
       addedToCollection: body['added_to_collection'] as bool? ?? false,
     );
+  }
+
+  /// Links a saved unlinked barcode to a game in the user's collection and
+  /// submits the mapping to GameUPC.com (REQ-CM-045, REQ-CM-046).
+  /// Returns the updated [Game] and whether GameUPC accepted the submission.
+  Future<({Game game, bool submittedToGameUpc})> linkBarcode(
+      String upc, int gameId) async {
+    final resp = await http
+        .post(
+          _uri('/scan/link'),
+          headers: _headers,
+          body: jsonEncode({'upc': upc, 'game_id': gameId}),
+        )
+        .timeout(const Duration(seconds: 15));
+    final body = await _checkResponse(resp);
+    return (
+      game: Game.fromJson(body['game'] as Map<String, dynamic>),
+      submittedToGameUpc: body['submitted_to_gameupc'] as bool? ?? false,
+    );
+  }
+
+  /// Discards a saved unlinked barcode without linking it to any game (REQ-CM-048).
+  Future<void> discardBarcode(String upc) async {
+    await http
+        .delete(_uri('/scan/unlinked/$upc'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
+    // Silent — server returns 204 or ignores missing records.
   }
 }

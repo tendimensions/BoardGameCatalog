@@ -15,6 +15,8 @@ class ScanResultCard extends StatelessWidget {
             : const Color(0xFF7eb8f7);
       case ScanStatus.notFound:
         return const Color(0xFFffb74d);
+      case ScanStatus.awaitingLink:
+        return const Color(0xFFce93d8); // purple — action needed
       case ScanStatus.error:
       case ScanStatus.duplicate:
         return const Color(0xFFe57373);
@@ -78,15 +80,18 @@ class ScanResultCard extends StatelessWidget {
             ),
           ),
 
-          // Status dot
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: _statusColor,
-              shape: BoxShape.circle,
+          // Status indicator — link icon for awaiting, dot for everything else
+          if (result.status == ScanStatus.awaitingLink)
+            Icon(Icons.link, color: _statusColor, size: 18)
+          else
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: _statusColor,
+                shape: BoxShape.circle,
+              ),
             ),
-          ),
         ],
       ),
     );
