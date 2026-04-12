@@ -172,6 +172,22 @@ The system comprises:
 - **REQ-CM-038:** System must provide feedback to users when their contribution is successfully submitted
 - **REQ-CM-028:** Same update/create logic applies when scanning in party list mode
 
+#### 3.2.5 Unknown Barcode Contribution Flow
+
+When a scanned barcode is not found in GameUPC.com, the user is given the opportunity
+to link it to a game in their collection, which is then submitted back to GameUPC.com
+as a community contribution.
+
+- **REQ-CM-040:** When a barcode scan returns no match from GameUPC, the system must save the unrecognised barcode to an `UnlinkedBarcode` record associated with the scanning user
+- **REQ-CM-041:** Mobile app must still play error audio feedback when a barcode is not found in GameUPC
+- **REQ-CM-042:** Mobile app must display a message informing the user that the barcode has been saved and offering the option to link it to a game in their collection
+- **REQ-CM-043:** The linking interface must display only games in the user's collection that do not yet have a barcode associated with them
+- **REQ-CM-044:** Before finalising the link, the mobile app must present a confirmation dialog that names the game explicitly, requiring deliberate user confirmation that the barcode matches
+- **REQ-CM-045:** Upon confirmed link, the server must update the game record with the barcode (stamping `Game.upc`) and submit the mapping to GameUPC.com via `POST /upc/{upc}/bgg_id/{bgg_id}`
+- **REQ-CM-046:** GameUPC submission must include the user's ID as the contributor identifier (REQ-CM-036)
+- **REQ-CM-047:** If the linked game has no BGG ID the system must skip GameUPC submission (GameUPC requires a BGG ID) and inform the user accordingly
+- **REQ-CM-048:** If the user dismisses the linking interface without selecting a game, the `UnlinkedBarcode` record must be deleted — the barcode is not retained
+- **REQ-CM-049:** The server must expose `POST /api/v1/scan/link` (link barcode to game) and `DELETE /api/v1/scan/unlinked/{upc}` (discard) endpoints for the mobile app
 #### GameUPC Confidence Flow (Future — REQ-CM-039 to REQ-CM-044)
 
 The GameUPC API returns one of three confidence states per scan. The current implementation

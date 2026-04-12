@@ -1,6 +1,6 @@
 import 'game.dart';
 
-enum ScanStatus { success, notFound, error, duplicate }
+enum ScanStatus { success, notFound, awaitingLink, error, duplicate }
 
 class ScanResult {
   final String upc;
@@ -24,7 +24,9 @@ class ScanResult {
       case ScanStatus.success:
         return addedToCollection ? 'Added' : 'Already in collection';
       case ScanStatus.notFound:
-        return 'Not found';
+        return 'Not found in GameUPC';
+      case ScanStatus.awaitingLink:
+        return 'Tap to link to a game';
       case ScanStatus.error:
         return 'Error';
       case ScanStatus.duplicate:

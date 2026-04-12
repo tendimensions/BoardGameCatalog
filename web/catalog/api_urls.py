@@ -3,19 +3,24 @@
 from django.urls import path
 
 from .api_views import (
-    BarcodeScanView,
     APICollectionView,
+    BarcodeScanView,
+    DiscardBarcodeView,
+    LinkBarcodeView,
     LoginView,
     UserProfileView,
 )
 
 urlpatterns = [
     # Auth
-    path('auth/login',        LoginView.as_view(),         name='api_login'),
+    path('auth/login',              LoginView.as_view(),         name='api_login'),
     # User
-    path('users/profile',     UserProfileView.as_view(),   name='api_profile'),
+    path('users/profile',           UserProfileView.as_view(),   name='api_profile'),
     # Collection
-    path('collection',        APICollectionView.as_view(), name='api_collection'),
+    path('collection',              APICollectionView.as_view(), name='api_collection'),
     # Barcode scan
-    path('scan/barcode',      BarcodeScanView.as_view(),   name='api_scan_barcode'),
+    path('scan/barcode',            BarcodeScanView.as_view(),   name='api_scan_barcode'),
+    # Unknown-barcode contribution (REQ-CM-040 through REQ-CM-049)
+    path('scan/link',               LinkBarcodeView.as_view(),   name='api_scan_link'),
+    path('scan/unlinked/<str:upc>', DiscardBarcodeView.as_view(), name='api_scan_discard'),
 ]

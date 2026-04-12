@@ -205,6 +205,29 @@ class GameRequest(models.Model):
         ]
 
 
+class UnlinkedBarcode(models.Model):
+    """
+    A barcode scanned by a user that was not found in GameUPC.com (REQ-CM-040).
+    Persisted so the user can link it to a collection game in a follow-up step.
+    Deleted immediately if the user dismisses without linking (REQ-CM-048),
+    or replaced/updated on subsequent scans of the same UPC by the same user.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='unlinked_barcodes'
+    )
+    upc = models.CharField(max_length=50)
+    scanned_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'unlinked_barcodes'
+        unique_together = [('user', 'upc')]
+        indexes = [models.Index(fields=['user'])]
+
+    def __str__(self):
+        return f"{self.upc} (unlinked, {self.user.username})"
+
+
 class LendingHistory(models.Model):
     """
     Full audit trail for game loans (Phase 6 future enhancement).
