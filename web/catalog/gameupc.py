@@ -108,12 +108,15 @@ def submit_barcode_mapping(upc: str, game_bgg_id: int, user_id: int) -> bool:
     Submit a user-verified UPC → game mapping back to GameUPC (REQ-CM-033, REQ-CM-036).
     Uses POST /upc/{upc}/bgg_id/{bgg_id} — the community voting endpoint.
 
+    user_id is hashed before transmission so the contributor is anonymous (REQ-CM-036).
     Returns True on success, False on failure (errors are non-fatal).
     """
+    import hashlib
     url = f'{_base_url()}/upc/{upc}/bgg_id/{game_bgg_id}'
     headers = {'x-api-key': _api_key()}
+    contributor_id = hashlib.sha256(str(user_id).encode()).hexdigest()
     try:
-        resp = requests.post(url, headers=headers, timeout=_TIMEOUT)
+        resp = requests.post(url, headers=headers, json={'user_id': contributor_id}, timeout=_TIMEOUT)
         if resp.status_code in (200, 201):
             logger.info('GameUPC mapping submitted: UPC %s → BGG %s', upc, game_bgg_id)
             return True
