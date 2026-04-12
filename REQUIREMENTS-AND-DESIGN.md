@@ -172,6 +172,18 @@ The system comprises:
 - **REQ-CM-038:** System must provide feedback to users when their contribution is successfully submitted
 - **REQ-CM-028:** Same update/create logic applies when scanning in party list mode
 
+#### GameUPC Confidence Flow (Future — REQ-CM-039 to REQ-CM-044)
+
+The GameUPC API returns one of three confidence states per scan. The current implementation
+handles only the "verified" case. The following requirements cover the full flow:
+
+- **REQ-CM-039:** When GameUPC returns `bgg_info_status: "verified"` (single high-confidence result), system must auto-resolve the game and add to collection without user interaction — current behaviour, already implemented.
+- **REQ-CM-040:** When GameUPC returns `bgg_info_status: "choose_from_bgg_info_or_search"` with one or more candidate games, mobile app must present a selection sheet showing each candidate (thumbnail, name, year, confidence score) and prompt the user to pick the correct one or dismiss.
+- **REQ-CM-041:** When GameUPC returns `new: true` with empty `bgg_info` (UPC completely unknown), mobile app must inform the user the barcode is unrecognised and offer a search field to find the correct game on BGG by name.
+- **REQ-CM-042:** After the user selects or confirms a game in either the choice or unknown flow, system must POST the confirmed BGG ID back to GameUPC via `POST /upc/{upc}/bgg_id/{bgg_id}` to improve the crowdsourced database.
+- **REQ-CM-043:** The Django scan endpoint (`POST /api/v1/scan/barcode`) must return candidate lists to the mobile app in a structured `suggestions` field when confidence is ambiguous, rather than auto-resolving. A second endpoint or parameter will be needed to submit the user's final choice.
+- **REQ-CM-044:** Mobile app must allow the user to skip/dismiss the confirmation prompt; in that case the scan is recorded as unresolved and no game is added to the collection.
+
 ### 3.3 Party Lists
 
 #### 3.3.1 Party List Creation
