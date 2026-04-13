@@ -17,11 +17,6 @@
 #     CM_CERTIFICATE_PASSWORD    — Certificate password
 #     CM_PROVISIONING_PROFILE    — Ad Hoc provisioning profile (base64 encoded .mobileprovision)
 #
-#   Group: android_signing (add when ready)
-#     CM_KEYSTORE                — Android keystore file (base64 encoded)
-#     CM_KEYSTORE_PASSWORD       — Keystore password
-#     CM_KEY_ALIAS               — Key alias
-#     CM_KEY_PASSWORD            — Key password
 #
 # =============================================================================
 
@@ -33,8 +28,6 @@ workflows:
     max_build_duration: 60
     environment:
       flutter: stable
-      android_signing:
-        - keystore_reference
       groups:
         - firebase_credentials
     triggering:
