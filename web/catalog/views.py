@@ -9,7 +9,7 @@ from django.shortcuts import render, redirect
 from django.views import View
 
 from . import bgg as bgg_client
-from .models import Game, UserCollection
+from .models import Game, GameList, GameListEntry, UserCollection
 
 logger = logging.getLogger(__name__)
 
@@ -188,3 +188,203 @@ class SyncBGGView(LoginRequiredMixin, View):
             messages.info(request, 'Sync complete — your collection is already up to date.')
 
         return redirect('catalog:collection')
+
+
+# ── Game Lists ────────────────────────────────────────────────────────────────
+
+class ManageListsView(LoginRequiredMixin, View):
+    """
+    GET  /lists/  — show all lists (REQ-GL-020, REQ-GL-021)
+    POST /lists/  — create a new list (REQ-GL-001)
+    """
+
+    login_url = '/accounts/login/'
+
+    def get(self, request):
+        from django.db.models import Count
+        lists = (
+            GameList.objects
+            .filter(user=request.user)
+            .annotate(entry_count=Count('entries'))
+        )
+        return render(request, 'catalog/lists.html', {'lists': lists})
+
+    def post(self, request):
+        name = request.POST.get('name', '').strip()
+        description = request.POST.get('description', '').strip()
+        if not name:
+            messages.error(request, 'List name is required.')
+            return redirect('catalog:lists')
+        GameList.objects.create(user=request.user, name=name, description=description)
+        messages.success(request, f'List "{name}" created.')
+        return redirect('catalog:lists')
+
+
+class ListDetailView(LoginRequiredMixin, View):
+    """GET /lists/<list_id>/  — show list entries (REQ-GL-022, REQ-GL-025)"""
+
+    login_url = '/accounts/login/'
+
+    def get(self, request, list_id):
+        try:
+            game_list = GameList.objects.get(id=list_id, user=request.user)
+        except GameList.DoesNotExist:
+            messages.error(request, 'List not found.')
+            return redirect('catalog:lists')
+
+        q = request.GET.get('q', '').strip()
+        entries = game_list.entries.select_related('game')
+        if q:
+            entries = entries.filter(game__title__icontains=q)
+
+        return render(request, 'catalog/list_detail.html', {
+            'game_list': game_list,
+            'entries': entries,
+            'search_query': q,
+        })
+
+
+class UpdateListView(LoginRequiredMixin, View):
+    """POST /lists/<list_id>/update/  — rename or update description (REQ-GL-002)"""
+
+    login_url = '/accounts/login/'
+
+    def post(self, request, list_id):
+        try:
+            game_list = GameList.objects.get(id=list_id, user=request.user)
+        except GameList.DoesNotExist:
+            messages.error(request, 'List not found.')
+            return redirect('catalog:lists')
+
+        name = request.POST.get('name', '').strip()
+        if not name:
+            messages.error(request, 'List name is required.')
+            return redirect('catalog:list_detail', list_id=list_id)
+
+        game_list.name = name
+        game_list.description = request.POST.get('description', '').strip()
+        game_list.save()
+        messages.success(request, 'List updated.')
+        return redirect('catalog:list_detail', list_id=list_id)
+
+
+class DeleteListView(LoginRequiredMixin, View):
+    """POST /lists/<list_id>/delete/  — delete a list (REQ-GL-003)"""
+
+    login_url = '/accounts/login/'
+
+    def post(self, request, list_id):
+        try:
+            game_list = GameList.objects.get(id=list_id, user=request.user)
+        except GameList.DoesNotExist:
+            messages.error(request, 'List not found.')
+            return redirect('catalog:lists')
+
+        name = game_list.name
+        game_list.delete()
+        messages.success(request, f'List "{name}" deleted.')
+        return redirect('catalog:lists')
+
+
+class AddToListView(LoginRequiredMixin, View):
+    """
+    POST /lists/<list_id>/add/  — add a game to a list from the web UI (REQ-GL-010, REQ-GL-026)
+
+    If the game is not in the user's collection and confirm=1 is posted, it is added
+    to the collection first, then to the list.
+    """
+
+    login_url = '/accounts/login/'
+
+    def post(self, request, list_id):
+        try:
+            game_list = GameList.objects.get(id=list_id, user=request.user)
+        except GameList.DoesNotExist:
+            messages.error(request, 'List not found.')
+            return redirect('catalog:lists')
+
+        game_id = request.POST.get('game_id')
+        try:
+            game = Game.objects.get(id=game_id)
+        except (Game.DoesNotExist, TypeError, ValueError):
+            messages.error(request, 'Game not found.')
+            return redirect('catalog:list_detail', list_id=list_id)
+
+        in_collection = UserCollection.objects.filter(
+            user=request.user, game=game
+        ).exists()
+
+        if not in_collection:
+            if request.POST.get('confirm') != '1':
+                # REQ-GL-026: prompt before silently adding to collection
+                messages.warning(
+                    request,
+                    f'"{game.title}" is not in your collection. '
+                    'Confirm below to add it to your collection and this list.',
+                )
+                return render(request, 'catalog/list_detail.html', {
+                    'game_list': game_list,
+                    'entries': game_list.entries.select_related('game'),
+                    'search_query': '',
+                    'confirm_add': game,
+                })
+            UserCollection.objects.get_or_create(
+                user=request.user, game=game,
+                defaults={'source': UserCollection.SOURCE_MANUAL},
+            )
+
+        _, created = GameListEntry.objects.get_or_create(
+            game_list=game_list,
+            game=game,
+            defaults={'added_via': GameListEntry.VIA_MANUAL},
+        )
+        if created:
+            messages.success(request, f'"{game.title}" added to "{game_list.name}".')
+        else:
+            messages.info(request, f'"{game.title}" is already on this list.')
+
+        return redirect('catalog:list_detail', list_id=list_id)
+
+
+class RemoveFromListView(LoginRequiredMixin, View):
+    """POST /lists/<list_id>/entries/<entry_id>/remove/  — remove game from list (REQ-GL-014)"""
+
+    login_url = '/accounts/login/'
+
+    def post(self, request, list_id, entry_id):
+        try:
+            entry = GameListEntry.objects.get(
+                id=entry_id,
+                game_list_id=list_id,
+                game_list__user=request.user,
+            )
+        except GameListEntry.DoesNotExist:
+            messages.error(request, 'Entry not found.')
+            return redirect('catalog:list_detail', list_id=list_id)
+
+        title = entry.game.title
+        entry.delete()
+        messages.success(request, f'"{title}" removed from list.')
+        return redirect('catalog:list_detail', list_id=list_id)
+
+
+class UpdateEntryNoteView(LoginRequiredMixin, View):
+    """POST /lists/<list_id>/entries/<entry_id>/note/  — update note on entry (REQ-GL-013)"""
+
+    login_url = '/accounts/login/'
+
+    def post(self, request, list_id, entry_id):
+        try:
+            entry = GameListEntry.objects.select_related('game').get(
+                id=entry_id,
+                game_list_id=list_id,
+                game_list__user=request.user,
+            )
+        except GameListEntry.DoesNotExist:
+            messages.error(request, 'Entry not found.')
+            return redirect('catalog:list_detail', list_id=list_id)
+
+        entry.note = request.POST.get('note', '').strip()
+        entry.save(update_fields=['note', 'updated_at'])
+        messages.success(request, f'Note updated for "{entry.game.title}".')
+        return redirect('catalog:list_detail', list_id=list_id)

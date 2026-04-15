@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Manage Lists — Board Game Catalog{% endblock %}
+
+{% block stats %}{{ lists|length }} list{{ lists|length|pluralize }}{% endblock %}
+
+{% block content %}
+<div class="page-wrap">
+
+  <div class="sync-bar" style="align-items:flex-start; gap:2rem; flex-wrap:wrap;">
+
+    {# ── Create new list ── #}
+    <form method="post" action="{% url 'catalog:lists' %}" style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+      {% csrf_token %}
+      <input type="text" name="name" placeholder="New list name…" required maxlength="100"
+             style="padding:0.4rem 0.75rem; background:#1e1e1e; border:1px solid #333; border-radius:6px; color:#ddd; font-size:0.9rem; min-width:200px;">
+      <input type="text" name="description" placeholder="Description (optional)"
+             style="padding:0.4rem 0.75rem; background:#1e1e1e; border:1px solid #333; border-radius:6px; color:#ddd; font-size:0.9rem; min-width:200px;">
+      <button type="submit" class="btn btn-primary">+ Create List</button>
+    </form>
+
+  </div>
+
+  {# ── List table ── #}
+  {% if lists %}
+  <table class="game-table" style="margin-top:1.5rem;">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Description</th>
+        <th style="text-align:center;">Games</th>
+        <th>Created</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for gl in lists %}
+      <tr>
+        <td>
+          <a href="{% url 'catalog:list_detail' gl.id %}" style="color:#7eb8f7; font-weight:500;">
+            {{ gl.name }}
+          </a>
+        </td>
+        <td style="color:#888; font-size:0.85rem;">{{ gl.description|default:"—" }}</td>
+        <td style="text-align:center; color:#aaa;">{{ gl.entry_count }}</td>
+        <td style="color:#666; font-size:0.82rem;">{{ gl.created_at|date:"M j, Y" }}</td>
+        <td style="text-align:right;">
+          <form method="post" action="{% url 'catalog:list_delete' gl.id %}"
+                onsubmit="return confirm('Delete list "{{ gl.name }}"? This cannot be undone.');"
+                style="display:inline;">
+            {% csrf_token %}
+            <button type="submit" class="btn-link" style="color:#e57373; font-size:0.82rem;">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div style="text-align:center; padding:4rem 0; color:#555;">
+    <div style="font-size:3rem; margin-bottom:1rem;">📋</div>
+    <p style="font-size:1rem;">No lists yet.</p>
+    <p style="font-size:0.85rem; color:#444;">Create a list above to start organising your collection.</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
