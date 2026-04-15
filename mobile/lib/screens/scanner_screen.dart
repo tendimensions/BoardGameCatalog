@@ -11,7 +11,13 @@ import '../widgets/scan_result_card.dart';
 import 'link_barcode_screen.dart';
 
 class ScannerScreen extends StatefulWidget {
-  const ScannerScreen({super.key});
+  /// When [listId] is provided the scanner operates in Mode B (Add to List).
+  final int? listId;
+  final String? listName;
+
+  const ScannerScreen({super.key, this.listId, this.listName});
+
+  bool get isModeB => listId != null;
 
   @override
   State<ScannerScreen> createState() => _ScannerScreenState();
@@ -67,17 +73,30 @@ class _ScannerScreenState extends State<ScannerScreen>
     ScanResult result;
 
     try {
-      final response = await ApiService(apiKey).scanBarcode(upc);
+      final response = await ApiService(apiKey)
+          .scanBarcode(upc, listId: widget.listId);
       await _audio.play(AssetSource('sounds/beep_success.mp3'), volume: 0.8);
-      result = ScanResult(
-        upc: upc,
-        status: ScanStatus.success,
-        game: response.game,
-        addedToCollection: response.addedToCollection,
-      );
+
+      if (widget.isModeB) {
+        result = ScanResult(
+          upc: upc,
+          status: ScanStatus.success,
+          game: response.game,
+          addedToCollection: response.addedToCollection,
+          addedToList: response.addedToList,
+          alreadyOnList: response.alreadyOnList,
+          listName: response.activeListName ?? widget.listName,
+        );
+      } else {
+        result = ScanResult(
+          upc: upc,
+          status: ScanStatus.success,
+          game: response.game,
+          addedToCollection: response.addedToCollection,
+        );
+      }
     } on ApiException catch (e) {
       await _audio.play(AssetSource('sounds/beep_error.mp3'), volume: 0.8);
-      // 404 with awaiting_link means the server saved the barcode for linking
       final isAwaitingLink = e.statusCode == 404;
       result = ScanResult(
         upc: upc,
@@ -189,7 +208,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                     ),
                   ),
 
-                // Top bar with torch toggle
+                // Top bar
                 Positioned(
                   top: 0,
                   left: 0,
@@ -201,19 +220,17 @@ class _ScannerScreenState extends State<ScannerScreen>
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            'Scan a barcode',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              shadows: [
-                                Shadow(blurRadius: 4, color: Colors.black)
-                              ],
-                            ),
+                          // Back arrow (since scanner is always pushed as a route)
+                          GestureDetector(
+                            onTap: () => Navigator.pop(context),
+                            child: const Icon(Icons.arrow_back,
+                                color: Colors.white, shadows: [
+                              Shadow(blurRadius: 4, color: Colors.black)
+                            ]),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.flash_on, color: Colors.white),
+                            icon: const Icon(Icons.flash_on,
+                                color: Colors.white),
                             onPressed: _scanner.toggleTorch,
                           ),
                         ],
@@ -221,6 +238,40 @@ class _ScannerScreenState extends State<ScannerScreen>
                     ),
                   ),
                 ),
+
+                // Mode B active-list banner
+                if (widget.isModeB)
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      color: const Color(0xCC1a1a2e),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.list_alt_outlined,
+                              color: Color(0xFF7eb8f7), size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Adding to: ${widget.listName}',
+                              style: const TextStyle(
+                                color: Color(0xFF7eb8f7),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                shadows: [
+                                  Shadow(blurRadius: 4, color: Colors.black)
+                                ],
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

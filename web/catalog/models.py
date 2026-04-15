@@ -228,6 +228,74 @@ class UnlinkedBarcode(models.Model):
         return f"{self.upc} (unlinked, {self.user.username})"
 
 
+class GameList(models.Model):
+    """
+    A user-defined named list of games drawn from their collection (REQ-GL-001 through REQ-GL-006).
+    Lists are personal tags — games must exist in the user's collection to be added.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='game_lists'
+    )
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'game_lists'
+        indexes = [models.Index(fields=['user'])]
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.name} ({self.user.username})"
+
+    @property
+    def entry_count(self):
+        return self.entries.count()
+
+
+class GameListEntry(models.Model):
+    """
+    A single game within a GameList, with an optional per-entry note (REQ-GL-010 through REQ-GL-015).
+    Entries are ordered newest-first (REQ-GL design decision §4).
+
+    NOTE (REQ-GL-015): If a game is removed from the user's UserCollection, the application
+    layer must delete the corresponding GameListEntry rows for that user. The DB cascade here
+    only fires if the Game record itself is deleted (which never happens in normal operation).
+    """
+
+    VIA_MANUAL = 'manual'
+    VIA_BARCODE = 'barcode'
+    VIA_CHOICES = [
+        (VIA_MANUAL, 'Manual'),
+        (VIA_BARCODE, 'Barcode'),
+    ]
+
+    game_list = models.ForeignKey(
+        GameList, on_delete=models.CASCADE, related_name='entries'
+    )
+    game = models.ForeignKey(
+        Game, on_delete=models.CASCADE, related_name='list_entries'
+    )
+    note = models.TextField(blank=True)
+    added_via = models.CharField(max_length=20, choices=VIA_CHOICES, default=VIA_MANUAL)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'game_list_entries'
+        unique_together = [('game_list', 'game')]
+        indexes = [
+            models.Index(fields=['game_list']),
+            models.Index(fields=['game']),
+        ]
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.game.title} in {self.game_list.name}"
+
+
 class LendingHistory(models.Model):
     """
     Full audit trail for game loans (Phase 6 future enhancement).

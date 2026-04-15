@@ -3,6 +3,8 @@ import 'package:http/http.dart' as http;
 import '../config/constants.dart';
 import '../models/collection_item.dart';
 import '../models/game.dart';
+import '../models/game_list.dart';
+import '../models/game_list_entry.dart';
 
 class ApiException implements Exception {
   final int statusCode;
@@ -77,20 +79,27 @@ class ApiService {
   }
 
   /// Submits a barcode scan. Returns a [Game] and whether it was newly added.
-  /// Throws [ApiException] with statusCode 404 and awaitingLink=true when the
-  /// barcode is unknown — the server has saved it for later linking.
-  Future<({Game game, bool addedToCollection})> scanBarcode(String upc) async {
+  /// Pass [listId] to scan in Mode B (Add to List — REQ-GL-035 through REQ-GL-040).
+  /// Throws [ApiException] with statusCode 404 when the barcode is unknown.
+  Future<({Game game, bool addedToCollection, bool? addedToList, bool? alreadyOnList, String? activeListName})>
+      scanBarcode(String upc, {int? listId}) async {
+    final payload = <String, dynamic>{'upc': upc};
+    if (listId != null) payload['list_id'] = listId;
+
     final resp = await http
         .post(
           _uri('/scan/barcode'),
           headers: _headers,
-          body: jsonEncode({'upc': upc}),
+          body: jsonEncode(payload),
         )
         .timeout(const Duration(seconds: 15));
     final body = await _checkResponse(resp);
     return (
       game: Game.fromJson(body['game'] as Map<String, dynamic>),
       addedToCollection: body['added_to_collection'] as bool? ?? false,
+      addedToList: body['added_to_list'] as bool?,
+      alreadyOnList: body['already_on_list'] as bool?,
+      activeListName: body['active_list_name'] as String?,
     );
   }
 
@@ -119,5 +128,96 @@ class ApiService {
         .delete(_uri('/scan/unlinked/$upc'), headers: _headers)
         .timeout(const Duration(seconds: 10));
     // Silent — server returns 204 or ignores missing records.
+  }
+
+  // ── Game Lists ──────────────────────────────────────────────────────────────
+
+  /// Returns all lists for the authenticated user.
+  Future<List<GameList>> fetchLists() async {
+    final resp = await http
+        .get(_uri('/lists'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
+    final body = await _checkResponse(resp);
+    return (body as List<dynamic>)
+        .map((e) => GameList.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Returns a single list with all its entries.
+  Future<GameList> fetchList(int listId) async {
+    final resp = await http
+        .get(_uri('/lists/$listId'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
+    final body = await _checkResponse(resp);
+    return GameList.fromJson(body);
+  }
+
+  /// Creates a new list. Returns the created [GameList].
+  Future<GameList> createList(String name, {String description = ''}) async {
+    final resp = await http
+        .post(
+          _uri('/lists'),
+          headers: _headers,
+          body: jsonEncode({'name': name, 'description': description}),
+        )
+        .timeout(const Duration(seconds: 10));
+    final body = await _checkResponse(resp);
+    return GameList.fromJson(body);
+  }
+
+  /// Updates a list's name and/or description.
+  Future<GameList> updateList(int listId, {String? name, String? description}) async {
+    final payload = <String, dynamic>{};
+    if (name != null) payload['name'] = name;
+    if (description != null) payload['description'] = description;
+    final resp = await http
+        .patch(
+          _uri('/lists/$listId'),
+          headers: _headers,
+          body: jsonEncode(payload),
+        )
+        .timeout(const Duration(seconds: 10));
+    final body = await _checkResponse(resp);
+    return GameList.fromJson(body);
+  }
+
+  /// Deletes a list.
+  Future<void> deleteList(int listId) async {
+    await http
+        .delete(_uri('/lists/$listId'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
+  }
+
+  /// Adds a game to a list. Returns the new [GameListEntry].
+  Future<GameListEntry> addToList(int listId, int gameId, {String note = ''}) async {
+    final resp = await http
+        .post(
+          _uri('/lists/$listId/entries'),
+          headers: _headers,
+          body: jsonEncode({'game_id': gameId, 'note': note}),
+        )
+        .timeout(const Duration(seconds: 10));
+    final body = await _checkResponse(resp);
+    return GameListEntry.fromJson(body);
+  }
+
+  /// Updates the note on a list entry.
+  Future<GameListEntry> updateEntryNote(int listId, int entryId, String note) async {
+    final resp = await http
+        .patch(
+          _uri('/lists/$listId/entries/$entryId'),
+          headers: _headers,
+          body: jsonEncode({'note': note}),
+        )
+        .timeout(const Duration(seconds: 10));
+    final body = await _checkResponse(resp);
+    return GameListEntry.fromJson(body);
+  }
+
+  /// Removes a game from a list.
+  Future<void> removeFromList(int listId, int entryId) async {
+    await http
+        .delete(_uri('/lists/$listId/entries/$entryId'), headers: _headers)
+        .timeout(const Duration(seconds: 10));
   }
 }

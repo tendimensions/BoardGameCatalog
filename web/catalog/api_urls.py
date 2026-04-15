@@ -6,6 +6,10 @@ from .api_views import (
     APICollectionView,
     BarcodeScanView,
     DiscardBarcodeView,
+    GameListDetailView,
+    GameListEntriesView,
+    GameListEntryDetailView,
+    GameListsView,
     LinkBarcodeView,
     LoginView,
     UserProfileView,
@@ -23,4 +27,9 @@ urlpatterns = [
     # Unknown-barcode contribution (REQ-CM-040 through REQ-CM-049)
     path('scan/link',               LinkBarcodeView.as_view(),   name='api_scan_link'),
     path('scan/unlinked/<str:upc>', DiscardBarcodeView.as_view(), name='api_scan_discard'),
+    # Game Lists (REQ-GL-001 through REQ-GL-041)
+    path('lists',                               GameListsView.as_view(),            name='api_lists'),
+    path('lists/<int:list_id>',                 GameListDetailView.as_view(),       name='api_list_detail'),
+    path('lists/<int:list_id>/entries',         GameListEntriesView.as_view(),      name='api_list_entries'),
+    path('lists/<int:list_id>/entries/<int:entry_id>', GameListEntryDetailView.as_view(), name='api_list_entry_detail'),
 ]

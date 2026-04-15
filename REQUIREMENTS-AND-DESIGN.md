@@ -249,6 +249,18 @@ handles only the "verified" case. The following requirements cover the full flow
 - **REQ-MA-021:** Mobile app must sync collection data from web application
 - **REQ-MA-022:** Mobile app must support offline viewing of cached collection
 
+### 3.4 Game Lists
+
+Game Lists allow users to organise games from their collection into named, personal lists
+with per-entry notes. Full requirements are in **[docs/features/game-lists.md](../docs/features/game-lists.md)**.
+
+Summary of requirement ranges:
+- **REQ-GL-001–006:** List CRUD and ownership
+- **REQ-GL-010–015:** List entry management (add, edit note, remove)
+- **REQ-GL-020–026:** Web interface — "Manage Lists" in top nav bar (Collection | **Manage Lists** | API Keys | Profile | Logout)
+- **REQ-GL-030–041:** Mobile — new "Lists" tab (Scan | Collection | **Lists** | Settings); Scan tab now shows mode selection screen before camera opens
+- **REQ-GL-050:** Future — BGG write-back (noted, not in scope)
+
 ### 3.5 Future Enhancements (Post-MVP)
 
 #### 3.5.1 Mobile Barcode Collection Management

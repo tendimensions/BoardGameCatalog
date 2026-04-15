@@ -19,8 +19,14 @@ from django.shortcuts import get_object_or_404
 from accounts.models import APIKey
 from . import gameupc as gameupc_client
 from .gameupc import GameNotFound, GameUPCError
-from .models import Game, UserCollection, UnlinkedBarcode
-from .serializers import CollectionItemSerializer, GameSerializer
+from .models import Game, GameList, GameListEntry, UserCollection, UnlinkedBarcode
+from .serializers import (
+    CollectionItemSerializer,
+    GameListDetailSerializer,
+    GameListEntrySerializer,
+    GameListSerializer,
+    GameSerializer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -166,15 +172,18 @@ class BarcodeScanView(APIView):
     POST /api/v1/scan/barcode
 
     Process a barcode scan from the mobile app (REQ-CM-020 through REQ-CM-024).
+    Optionally add the resolved game to a list when list_id is supplied (REQ-GL-035 through REQ-GL-040).
 
-    Request:  { "upc": "012345678901" }
-    Response: { "game": {...}, "added_to_collection": bool, "updated_existing": bool }
+    Request:  { "upc": "012345678901", "list_id": 7 }   ← list_id is optional (Mode B)
+    Response: { "game": {...}, "added_to_collection": bool, "updated_existing": bool,
+                "added_to_list": bool, "already_on_list": bool }   ← list fields only when list_id given
 
     Processing order:
       1. Look up the UPC on GameUPC.com.
       2. If the game already exists in our DB (by UPC or title match), update UPC if missing.
       3. If it doesn't exist, create a new Game record.
       4. Add to the user's collection if not already present.
+      5. If list_id supplied, add the game to that list (Mode B — REQ-GL-037).
     """
 
     permission_classes = [IsAuthenticated]
@@ -187,6 +196,18 @@ class BarcodeScanView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # ── Optional list target (Mode B — REQ-GL-035) ────────────────────────
+        list_id = request.data.get('list_id')
+        target_list = None
+        if list_id:
+            try:
+                target_list = GameList.objects.get(id=list_id, user=request.user)
+            except GameList.DoesNotExist:
+                return Response(
+                    {'error': 'List not found.'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
         # ── Step 1: GameUPC lookup ────────────────────────────────────────────
         try:
             result = gameupc_client.lookup_barcode(upc)
@@ -198,15 +219,16 @@ class BarcodeScanView(APIView):
                 upc=upc,
                 defaults={},
             )
-            return Response(
-                {
-                    'error': f'Barcode {upc} was not found in GameUPC. '
-                             'It has been saved — you can link it to a game in your collection.',
-                    'upc': upc,
-                    'awaiting_link': True,
-                },
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            response_body = {
+                'error': f'Barcode {upc} was not found in GameUPC. '
+                         'It has been saved — you can link it to a game in your collection.',
+                'upc': upc,
+                'awaiting_link': True,
+            }
+            if target_list:
+                # REQ-GL-040: inform the user which list was active
+                response_body['active_list_name'] = target_list.name
+            return Response(response_body, status=status.HTTP_404_NOT_FOUND)
         except GameUPCError as exc:
             logger.warning('GameUPC error for UPC %s: %s', upc, exc)
             return Response(
@@ -250,15 +272,34 @@ class BarcodeScanView(APIView):
             defaults={'source': UserCollection.SOURCE_BARCODE},
         )
 
+        # ── Step 5: Add to list if Mode B ─────────────────────────────────────
+        response_body = {
+            'game': GameSerializer(game).data,
+            'added_to_collection': added_to_collection,
+            'updated_existing': updated_existing,
+        }
+
+        if target_list:
+            _, added_to_list = GameListEntry.objects.get_or_create(
+                game_list=target_list,
+                game=game,
+                defaults={'added_via': GameListEntry.VIA_BARCODE},
+            )
+            response_body['added_to_list'] = added_to_list
+            response_body['already_on_list'] = not added_to_list
+            if added_to_list:
+                logger.info(
+                    'User %s scanned %s → added to list "%s"',
+                    request.user.username, game.title, target_list.name,
+                )
+            else:
+                logger.info(
+                    'User %s scanned %s → already on list "%s"',
+                    request.user.username, game.title, target_list.name,
+                )
+
         http_status = status.HTTP_201_CREATED if added_to_collection else status.HTTP_200_OK
-        return Response(
-            {
-                'game': GameSerializer(game).data,
-                'added_to_collection': added_to_collection,
-                'updated_existing': updated_existing,
-            },
-            status=http_status,
-        )
+        return Response(response_body, status=http_status)
 
 
 # ── Unknown barcode linking ───────────────────────────────────────────────────
@@ -364,4 +405,175 @@ class DiscardBarcodeView(APIView):
 
     def delete(self, request, upc):
         UnlinkedBarcode.objects.filter(user=request.user, upc=upc).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ── Game Lists ────────────────────────────────────────────────────────────────
+
+class GameListsView(APIView):
+    """
+    GET  /api/v1/lists  — return all lists for the authenticated user (REQ-GL-001)
+    POST /api/v1/lists  — create a new list (REQ-GL-001)
+
+    POST request: { "name": "Loaned", "description": "" }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        lists = (
+            GameList.objects
+            .filter(user=request.user)
+            .prefetch_related('entries')
+        )
+        # Annotate entry_count without an extra query per list
+        from django.db.models import Count
+        lists = lists.annotate(entry_count=Count('entries'))
+        return Response(GameListSerializer(lists, many=True).data)
+
+    def post(self, request):
+        name = (request.data.get('name') or '').strip()
+        if not name:
+            return Response(
+                {'error': 'name is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        game_list = GameList.objects.create(
+            user=request.user,
+            name=name,
+            description=(request.data.get('description') or '').strip(),
+        )
+        from django.db.models import Count
+        game_list.entry_count = 0
+        return Response(
+            GameListSerializer(game_list).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class GameListDetailView(APIView):
+    """
+    GET    /api/v1/lists/<list_id>  — return list with all entries (REQ-GL-022)
+    PATCH  /api/v1/lists/<list_id>  — update name / description (REQ-GL-002)
+    DELETE /api/v1/lists/<list_id>  — delete list (REQ-GL-003)
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _get_list(self, request, list_id):
+        try:
+            return GameList.objects.get(id=list_id, user=request.user)
+        except GameList.DoesNotExist:
+            return None
+
+    def get(self, request, list_id):
+        game_list = self._get_list(request, list_id)
+        if game_list is None:
+            return Response({'error': 'List not found.'}, status=status.HTTP_404_NOT_FOUND)
+        from django.db.models import Count
+        game_list.entry_count = game_list.entries.count()
+        return Response(GameListDetailSerializer(game_list).data)
+
+    def patch(self, request, list_id):
+        game_list = self._get_list(request, list_id)
+        if game_list is None:
+            return Response({'error': 'List not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if 'name' in request.data:
+            name = (request.data['name'] or '').strip()
+            if not name:
+                return Response({'error': 'name cannot be empty.'}, status=status.HTTP_400_BAD_REQUEST)
+            game_list.name = name
+        if 'description' in request.data:
+            game_list.description = (request.data['description'] or '').strip()
+        game_list.save()
+        game_list.entry_count = game_list.entries.count()
+        return Response(GameListSerializer(game_list).data)
+
+    def delete(self, request, list_id):
+        game_list = self._get_list(request, list_id)
+        if game_list is None:
+            return Response({'error': 'List not found.'}, status=status.HTTP_404_NOT_FOUND)
+        game_list.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class GameListEntriesView(APIView):
+    """
+    POST /api/v1/lists/<list_id>/entries
+
+    Add a game to a list (REQ-GL-010, REQ-GL-011).
+    The game must be in the user's collection.
+
+    Request: { "game_id": 42, "note": "optional note" }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, list_id):
+        try:
+            game_list = GameList.objects.get(id=list_id, user=request.user)
+        except GameList.DoesNotExist:
+            return Response({'error': 'List not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        game_id = request.data.get('game_id')
+        if not game_id:
+            return Response({'error': 'game_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Game must be in the user's collection (REQ-GL-010)
+        if not UserCollection.objects.filter(user=request.user, game_id=game_id).exists():
+            return Response(
+                {'error': 'Game not found in your collection.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        entry, created = GameListEntry.objects.get_or_create(
+            game_list=game_list,
+            game_id=game_id,
+            defaults={
+                'note': (request.data.get('note') or '').strip(),
+                'added_via': GameListEntry.VIA_MANUAL,
+            },
+        )
+        if not created:
+            return Response(
+                {'error': 'Game is already on this list.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(
+            GameListEntrySerializer(entry).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class GameListEntryDetailView(APIView):
+    """
+    PATCH  /api/v1/lists/<list_id>/entries/<entry_id>  — update note (REQ-GL-013)
+    DELETE /api/v1/lists/<list_id>/entries/<entry_id>  — remove from list (REQ-GL-014)
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _get_entry(self, request, list_id, entry_id):
+        try:
+            return GameListEntry.objects.select_related('game').get(
+                id=entry_id,
+                game_list_id=list_id,
+                game_list__user=request.user,
+            )
+        except GameListEntry.DoesNotExist:
+            return None
+
+    def patch(self, request, list_id, entry_id):
+        entry = self._get_entry(request, list_id, entry_id)
+        if entry is None:
+            return Response({'error': 'Entry not found.'}, status=status.HTTP_404_NOT_FOUND)
+        entry.note = (request.data.get('note') or '').strip()
+        entry.save(update_fields=['note', 'updated_at'])
+        return Response(GameListEntrySerializer(entry).data)
+
+    def delete(self, request, list_id, entry_id):
+        entry = self._get_entry(request, list_id, entry_id)
+        if entry is None:
+            return Response({'error': 'Entry not found.'}, status=status.HTTP_404_NOT_FOUND)
+        entry.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

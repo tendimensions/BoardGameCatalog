@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}{{ game_list.name }} — Board Game Catalog{% endblock %}
+
+{% block stats %}{{ entries|length }} game{{ entries|length|pluralize }}{% endblock %}
+
+{% block content %}
+<div class="page-wrap">
+
+  {# ── List header + rename form ── #}
+  <div class="sync-bar" style="align-items:flex-start; gap:2rem; flex-wrap:wrap;">
+
+    <div>
+      <a href="{% url 'catalog:lists' %}" style="color:#666; font-size:0.85rem;">← All Lists</a>
+      <h2 style="margin:0.25rem 0 0.1rem; color:#ddd;">{{ game_list.name }}</h2>
+      {% if game_list.description %}
+      <p style="margin:0; color:#666; font-size:0.85rem;">{{ game_list.description }}</p>
+      {% endif %}
+    </div>
+
+    {# Rename form #}
+    <details style="margin-left:auto;">
+      <summary style="cursor:pointer; color:#7eb8f7; font-size:0.85rem;">Rename / Edit</summary>
+      <form method="post" action="{% url 'catalog:list_update' game_list.id %}"
+            style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; margin-top:0.75rem;">
+        {% csrf_token %}
+        <input type="text" name="name" value="{{ game_list.name }}" required maxlength="100"
+               style="padding:0.4rem 0.75rem; background:#1e1e1e; border:1px solid #333; border-radius:6px; color:#ddd; font-size:0.9rem; min-width:180px;">
+        <input type="text" name="description" value="{{ game_list.description }}" placeholder="Description (optional)"
+               style="padding:0.4rem 0.75rem; background:#1e1e1e; border:1px solid #333; border-radius:6px; color:#ddd; font-size:0.9rem; min-width:200px;">
+        <button type="submit" class="btn btn-primary">Save</button>
+      </form>
+    </details>
+
+    {# Delete list #}
+    <form method="post" action="{% url 'catalog:list_delete' game_list.id %}"
+          onsubmit="return confirm('Delete list &quot;{{ game_list.name }}&quot;? This cannot be undone.');">
+      {% csrf_token %}
+      <button type="submit" class="btn" style="background:#3a1a1a; color:#e57373; border-color:#5a2a2a;">Delete List</button>
+    </form>
+
+  </div>
+
+  {# ── Confirm-add banner (REQ-GL-026) ── #}
+  {% if confirm_add %}
+  <div class="info-banner" style="background:#2a2a00; border-color:#666600;">
+    <p>
+      <strong style="color:#ffeb3b;">⚠ "{{ confirm_add.title }}" is not in your collection.</strong>
+      Adding it to this list will also add it to your collection.
+    </p>
+    <form method="post" action="{% url 'catalog:list_add_game' game_list.id %}" style="display:inline;">
+      {% csrf_token %}
+      <input type="hidden" name="game_id" value="{{ confirm_add.id }}">
+      <input type="hidden" name="confirm" value="1">
+      <button type="submit" class="btn btn-primary">Yes, add to collection &amp; list</button>
+    </form>
+    <a href="{% url 'catalog:list_detail' game_list.id %}" style="margin-left:1rem; color:#888;">Cancel</a>
+  </div>
+  {% endif %}
+
+  {# ── Search ── #}
+  <div id="filters" style="margin-top:1rem;">
+    <form method="get">
+      <input type="search" name="q" value="{{ search_query }}"
+             placeholder="Search games in this list…"
+             style="padding:0.4rem 0.75rem; background:#1e1e1e; border:1px solid #333; border-radius:6px; color:#ddd; font-size:0.9rem; min-width:280px;">
+      <button type="submit" class="btn" style="margin-left:0.5rem;">Search</button>
+      {% if search_query %}
+      <a href="{% url 'catalog:list_detail' game_list.id %}" class="btn" style="margin-left:0.25rem;">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+
+  {# ── Entries table ── #}
+  {% if entries %}
+  <table class="game-table" style="margin-top:1rem;">
+    <thead>
+      <tr>
+        <th colspan="2">Game</th>
+        <th>Note</th>
+        <th>Added</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in entries %}
+      <tr>
+        <td style="width:52px; padding:6px 8px;">
+          {% if entry.game.thumbnail_url %}
+          <img src="{{ entry.game.thumbnail_url }}" alt="" width="44" height="44"
+               style="object-fit:cover; border-radius:4px; display:block;">
+          {% else %}
+          <div style="width:44px; height:44px; background:#2a2a2a; border-radius:4px;"></div>
+          {% endif %}
+        </td>
+        <td>
+          <div style="color:#ddd; font-weight:500; font-size:0.9rem;">{{ entry.game.title }}</div>
+          <div style="color:#666; font-size:0.78rem;">
+            {% if entry.game.year_published %}{{ entry.game.year_published }} · {% endif %}
+            {{ entry.game.players_display }} players
+          </div>
+        </td>
+
+        {# ── Inline note edit ── #}
+        <td x-data="{ editing: false }">
+          <span x-show="!editing" style="color:#aaa; font-size:0.85rem;">
+            {{ entry.note|default:"—" }}
+            <button @click="editing=true" class="btn-link" style="color:#555; font-size:0.78rem; margin-left:0.4rem;">edit</button>
+          </span>
+          <form x-show="editing" method="post"
+                action="{% url 'catalog:list_update_note' game_list.id entry.id %}"
+                style="display:flex; gap:0.4rem; align-items:center;">
+            {% csrf_token %}
+            <input type="text" name="note" value="{{ entry.note }}" placeholder="Add a note…"
+                   style="padding:0.3rem 0.5rem; background:#1e1e1e; border:1px solid #444; border-radius:4px; color:#ddd; font-size:0.85rem; width:180px;">
+            <button type="submit" class="btn btn-primary" style="padding:0.3rem 0.6rem; font-size:0.8rem;">Save</button>
+            <button type="button" @click="editing=false" class="btn-link" style="font-size:0.8rem;">Cancel</button>
+          </form>
+        </td>
+
+        <td style="color:#555; font-size:0.78rem; white-space:nowrap;">
+          {{ entry.created_at|date:"M j, Y" }}
+          {% if entry.added_via == 'barcode' %}
+          <span title="Added by barcode scan" style="color:#444; margin-left:0.3rem;">📷</span>
+          {% endif %}
+        </td>
+        <td style="text-align:right;">
+          <form method="post" action="{% url 'catalog:list_remove_entry' game_list.id entry.id %}"
+                onsubmit="return confirm('Remove &quot;{{ entry.game.title }}&quot; from this list?');">
+            {% csrf_token %}
+            <button type="submit" class="btn-link" style="color:#e57373; font-size:0.82rem;">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% elif search_query %}
+  <p style="color:#555; margin-top:2rem; text-align:center;">No games matching "{{ search_query }}".</p>
+  {% else %}
+  <div style="text-align:center; padding:4rem 0; color:#555;">
+    <div style="font-size:3rem; margin-bottom:1rem;">🎲</div>
+    <p style="font-size:1rem;">This list is empty.</p>
+    <p style="font-size:0.85rem; color:#444;">Scan games in "Add to List" mode on the mobile app, or add them from your collection.</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -18,6 +18,7 @@
     <span id="stats-bar">{% block stats %}{% endblock %}</span>
     <nav class="header-nav">
       <a href="{% url 'catalog:collection' %}">Collection</a>
+      <a href="{% url 'catalog:lists' %}">Manage Lists</a>
       <a href="{% url 'accounts:api_keys' %}">API Keys</a>
       <a href="{% url 'accounts:profile' %}">Profile</a>
       <form method="post" action="{% url 'accounts:logout' %}" style="display:inline">
