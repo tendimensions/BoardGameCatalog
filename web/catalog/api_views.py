@@ -421,14 +421,13 @@ class GameListsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        # entry_count is a @property on GameList — no annotation needed.
+        # prefetch_related avoids N+1 queries when the list is long.
         lists = (
             GameList.objects
             .filter(user=request.user)
             .prefetch_related('entries')
         )
-        # Annotate entry_count without an extra query per list
-        from django.db.models import Count
-        lists = lists.annotate(entry_count=Count('entries'))
         return Response(GameListSerializer(lists, many=True).data)
 
     def post(self, request):
@@ -443,8 +442,7 @@ class GameListsView(APIView):
             name=name,
             description=(request.data.get('description') or '').strip(),
         )
-        from django.db.models import Count
-        game_list.entry_count = 0
+        # entry_count is a @property — no manual assignment needed.
         return Response(
             GameListSerializer(game_list).data,
             status=status.HTTP_201_CREATED,
@@ -470,8 +468,7 @@ class GameListDetailView(APIView):
         game_list = self._get_list(request, list_id)
         if game_list is None:
             return Response({'error': 'List not found.'}, status=status.HTTP_404_NOT_FOUND)
-        from django.db.models import Count
-        game_list.entry_count = game_list.entries.count()
+        # entry_count is a @property — serializer reads it directly.
         return Response(GameListDetailSerializer(game_list).data)
 
     def patch(self, request, list_id):
@@ -486,7 +483,7 @@ class GameListDetailView(APIView):
         if 'description' in request.data:
             game_list.description = (request.data['description'] or '').strip()
         game_list.save()
-        game_list.entry_count = game_list.entries.count()
+        # entry_count is a @property — no manual assignment needed.
         return Response(GameListSerializer(game_list).data)
 
     def delete(self, request, list_id):
