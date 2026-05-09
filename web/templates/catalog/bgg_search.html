@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Search BGG — Board Game Catalog{% endblock %}
+
+{% block content %}
+<div class="page-wrap">
+
+  <h2>Search BoardGameGeek</h2>
+  <p class="text-muted">
+    Uses the same search backend as the iOS app
+    (<code>GET /api/v1/games/search</code>).
+    Results are fetched live from BGG — up to 10 matches returned.
+  </p>
+
+  <form method="get" action="{% url 'catalog:bgg_search' %}" class="sync-bar">
+    <input type="text"
+           name="q"
+           value="{{ query|default:'' }}"
+           placeholder="Game title…"
+           autofocus
+           style="flex:1; padding:0.5rem 0.75rem; background:#1e1e1e; color:#ddd;
+                  border:1px solid #333; border-radius:4px; font-size:0.95rem;">
+    <button type="submit" class="btn btn-primary">Search</button>
+  </form>
+
+  {% if error %}
+    <div class="message message-error" style="margin-top:1rem;">
+      BGG search failed: {{ error }}
+    </div>
+  {% endif %}
+
+  {% if query and not error %}
+    <p style="margin-top:1rem; color:#888;">
+      {% if results %}
+        {{ results|length }} result{{ results|length|pluralize }} for
+        <strong style="color:#ddd;">{{ query }}</strong>
+      {% else %}
+        No results found for <strong style="color:#ddd;">{{ query }}</strong>
+      {% endif %}
+    </p>
+  {% endif %}
+
+  {% if results %}
+  <table class="game-table" style="margin-top:0.5rem;">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Title</th>
+        <th>Year</th>
+        <th>BGG ID</th>
+        <th>In collection</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in results %}
+      <tr>
+        <td style="width:48px;">
+          {% if row.game.thumbnail_url %}
+            <img src="{{ row.game.thumbnail_url }}"
+                 alt="{{ row.game.title }}"
+                 width="44" height="44"
+                 style="object-fit:cover; border-radius:3px; display:block;">
+          {% endif %}
+        </td>
+        <td>
+          <a href="https://boardgamegeek.com/boardgame/{{ row.game.bgg_id }}"
+             target="_blank" rel="noopener"
+             style="color:#7eb8f7;">{{ row.game.title }}</a>
+        </td>
+        <td>{{ row.game.year_published|default:"—" }}</td>
+        <td style="font-family:monospace; color:#888;">{{ row.game.bgg_id }}</td>
+        <td>
+          {% if row.already_owned %}
+            <span style="color:#81c784;">✓ Owned</span>
+          {% else %}
+            <span style="color:#555;">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -9,6 +9,8 @@ urlpatterns = [
     path('', views.CollectionView.as_view(), name='collection'),
     path('dismiss-banner/', views.DismissBannerView.as_view(), name='dismiss_banner'),
     path('sync-bgg/', views.SyncBGGView.as_view(), name='sync_bgg'),
+    # BGG Search
+    path('bgg-search/', views.BGGSearchView.as_view(), name='bgg_search'),
     # Game Lists (REQ-GL-020 through REQ-GL-026)
     path('lists/', views.ManageListsView.as_view(), name='lists'),
     path('lists/<int:list_id>/', views.ListDetailView.as_view(), name='list_detail'),

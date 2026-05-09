@@ -190,6 +190,46 @@ class SyncBGGView(LoginRequiredMixin, View):
         return redirect('catalog:collection')
 
 
+# ── BGG Search ───────────────────────────────────────────────────────────────
+
+class BGGSearchView(LoginRequiredMixin, View):
+    """
+    GET /bgg-search/?q=<query>
+
+    Web UI wrapper around search_games() — same backend call the mobile app
+    uses via GET /api/v1/games/search.  Lets you compare BGG search results
+    directly against what the iOS app would receive.
+    """
+
+    login_url = '/accounts/login/'
+
+    def get(self, request):
+        query = request.GET.get('q', '').strip()
+        results = []
+        error = None
+
+        if query:
+            try:
+                bgg_games = bgg_client.search_games(query, limit=10)
+                owned_bgg_ids = set(
+                    UserCollection.objects
+                    .filter(user=request.user, game__bgg_id__in=[g.bgg_id for g in bgg_games])
+                    .values_list('game__bgg_id', flat=True)
+                )
+                results = [
+                    {'game': g, 'already_owned': g.bgg_id in owned_bgg_ids}
+                    for g in bgg_games
+                ]
+            except bgg_client.BGGError as exc:
+                error = str(exc)
+
+        return render(request, 'catalog/bgg_search.html', {
+            'query': query,
+            'results': results,
+            'error': error,
+        })
+
+
 # ── Game Lists ────────────────────────────────────────────────────────────────
 
 class ManageListsView(LoginRequiredMixin, View):
