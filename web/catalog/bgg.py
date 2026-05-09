@@ -104,7 +104,6 @@ def fetch_collection(username: str) -> list[BGGGame]:
     url = f'{_BGG_BASE}/collection'
     params = {
         'username': username,
-        'excludesubtype': 'boardgameexpansion',
         'stats': 1,
     }
     headers = _bgg_headers()
@@ -163,7 +162,7 @@ def fetch_thing(bgg_id: int) -> BGGGame:
     Raises BGGError on network or API errors, or if the game is not found.
     """
     url = f'{_BGG_BASE}/thing'
-    params = {'id': bgg_id, 'type': 'boardgame'}
+    params = {'id': bgg_id, 'type': 'boardgame,boardgameexpansion'}
     headers = _bgg_headers()
 
     resp = None
@@ -234,7 +233,7 @@ def search_games(query: str, limit: int = 10) -> list[BGGGame]:
         try:
             resp = requests.get(
                 search_url,
-                params={'query': query, 'type': 'boardgame'},
+                params={'query': query, 'type': 'boardgame,boardgameexpansion'},
                 headers=headers,
                 timeout=30,
             )
@@ -278,7 +277,7 @@ def search_games(query: str, limit: int = 10) -> list[BGGGame]:
         try:
             resp = requests.get(
                 thing_url,
-                params={'id': ','.join(str(i) for i in ids), 'type': 'boardgame'},
+                params={'id': ','.join(str(i) for i in ids), 'type': 'boardgame,boardgameexpansion'},
                 headers=headers,
                 timeout=30,
             )
