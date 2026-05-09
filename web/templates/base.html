@@ -24,6 +24,7 @@
       <a href="{% url 'catalog:collection' %}">Collection</a>
       <a href="{% url 'catalog:lists' %}">Manage Lists</a>
       <a href="{% url 'accounts:api_keys' %}">API Keys</a>
+      <a href="{% url 'catalog:bgg_search' %}">Search BGG</a>
       <a href="{% url 'accounts:profile' %}">Profile</a>
       <form method="post" action="{% url 'accounts:logout' %}" style="display:inline">
         {% csrf_token %}
