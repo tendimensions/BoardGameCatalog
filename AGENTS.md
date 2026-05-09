@@ -106,3 +106,4 @@ Full functional requirements (90+ items), database schema, and API specs are in 
 - Push the working branch after the code has been updated.
 - Create a pull request for review when the work is finished.
 - Always run the relevant unit tests before finishing work to confirm nothing broke.
+- Increment the application version number when appropriate. If the user has not specified which segment to bump, ask whether to increment the major, minor, or revision number before changing it.
