@@ -107,12 +107,7 @@ def fetch_collection(username: str) -> list[BGGGame]:
         'excludesubtype': 'boardgameexpansion',
         'stats': 1,
     }
-    headers = {
-        'User-Agent': 'BoardGameCatalog/1.0 (https://boardgames.tendimensions.com)',
-    }
-    token = getattr(settings, 'BGG_API_TOKEN', '')
-    if token and not token.startswith('CHANGE-ME'):
-        headers['Authorization'] = f'Bearer {token}'
+    headers = _bgg_headers()
 
     response = None
     for attempt in range(_MAX_RETRIES):
@@ -149,6 +144,17 @@ def fetch_collection(username: str) -> list[BGGGame]:
     return parse_collection_xml(response.text)
 
 
+def _bgg_headers() -> dict:
+    """Common headers for all BGG API requests, including auth token when configured."""
+    headers = {
+        'User-Agent': 'BoardGameCatalog/1.0 (https://boardgames.tendimensions.com)',
+    }
+    token = getattr(settings, 'BGG_API_TOKEN', '')
+    if token and not token.startswith('CHANGE-ME'):
+        headers['Authorization'] = f'Bearer {token}'
+    return headers
+
+
 def fetch_thing(bgg_id: int) -> BGGGame:
     """
     Fetch a single board game's metadata from BGG by its ID.
@@ -158,17 +164,27 @@ def fetch_thing(bgg_id: int) -> BGGGame:
     """
     url = f'{_BGG_BASE}/thing'
     params = {'id': bgg_id, 'type': 'boardgame'}
-    headers = {
-        'User-Agent': 'BoardGameCatalog/1.0 (https://boardgames.tendimensions.com)',
-    }
-    try:
-        time.sleep(_REQUEST_DELAY)
-        resp = requests.get(url, params=params, headers=headers, timeout=30)
-    except requests.RequestException as exc:
-        raise BGGError(f'Could not reach BoardGameGeek: {exc}') from exc
+    headers = _bgg_headers()
 
-    if resp.status_code != 200:
-        raise BGGError(f'BGG returned HTTP {resp.status_code} for thing {bgg_id}')
+    resp = None
+    for attempt in range(_MAX_RETRIES):
+        time.sleep(_REQUEST_DELAY)
+        try:
+            resp = requests.get(url, params=params, headers=headers, timeout=30)
+        except requests.RequestException as exc:
+            raise BGGError(f'Could not reach BoardGameGeek: {exc}') from exc
+
+        if resp.status_code == 202:
+            if attempt < _MAX_RETRIES - 1:
+                logger.info('BGG returned 202 for thing %s — retrying (%d/%d)', bgg_id, attempt + 1, _MAX_RETRIES)
+                time.sleep(_RETRY_DELAY)
+                continue
+            raise BGGError(f'BoardGameGeek is still processing game {bgg_id}. Please try again.')
+
+        if resp.status_code != 200:
+            raise BGGError(f'BGG returned HTTP {resp.status_code} for thing {bgg_id}')
+
+        break
 
     try:
         root = ET.fromstring(resp.text)
@@ -209,22 +225,33 @@ def search_games(query: str, limit: int = 10) -> list[BGGGame]:
     Raises BGGError on network or API errors.
     """
     search_url = f'{_BGG_BASE}/search'
-    headers = {
-        'User-Agent': 'BoardGameCatalog/1.0 (https://boardgames.tendimensions.com)',
-    }
-    try:
-        time.sleep(_REQUEST_DELAY)
-        resp = requests.get(
-            search_url,
-            params={'query': query, 'type': 'boardgame'},
-            headers=headers,
-            timeout=30,
-        )
-    except requests.RequestException as exc:
-        raise BGGError(f'Could not reach BoardGameGeek: {exc}') from exc
+    headers = _bgg_headers()
 
-    if resp.status_code != 200:
-        raise BGGError(f'BGG search returned HTTP {resp.status_code}')
+    # Step 1: search for matching IDs
+    resp = None
+    for attempt in range(_MAX_RETRIES):
+        time.sleep(_REQUEST_DELAY)
+        try:
+            resp = requests.get(
+                search_url,
+                params={'query': query, 'type': 'boardgame'},
+                headers=headers,
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            raise BGGError(f'Could not reach BoardGameGeek: {exc}') from exc
+
+        if resp.status_code == 202:
+            if attempt < _MAX_RETRIES - 1:
+                logger.info('BGG returned 202 for search "%s" — retrying (%d/%d)', query, attempt + 1, _MAX_RETRIES)
+                time.sleep(_RETRY_DELAY)
+                continue
+            raise BGGError('BoardGameGeek search is still processing. Please try again.')
+
+        if resp.status_code != 200:
+            raise BGGError(f'BGG search returned HTTP {resp.status_code}')
+
+        break
 
     try:
         root = ET.fromstring(resp.text)
@@ -243,21 +270,32 @@ def search_games(query: str, limit: int = 10) -> list[BGGGame]:
     if not ids:
         return []
 
-    # Batch-fetch full metadata (includes thumbnails) for the matched IDs
+    # Step 2: batch-fetch full metadata (includes thumbnails) for the matched IDs
     thing_url = f'{_BGG_BASE}/thing'
-    try:
+    resp = None
+    for attempt in range(_MAX_RETRIES):
         time.sleep(_REQUEST_DELAY)
-        resp = requests.get(
-            thing_url,
-            params={'id': ','.join(str(i) for i in ids), 'type': 'boardgame'},
-            headers=headers,
-            timeout=30,
-        )
-    except requests.RequestException as exc:
-        raise BGGError(f'Could not reach BoardGameGeek: {exc}') from exc
+        try:
+            resp = requests.get(
+                thing_url,
+                params={'id': ','.join(str(i) for i in ids), 'type': 'boardgame'},
+                headers=headers,
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            raise BGGError(f'Could not reach BoardGameGeek: {exc}') from exc
 
-    if resp.status_code != 200:
-        raise BGGError(f'BGG thing batch returned HTTP {resp.status_code}')
+        if resp.status_code == 202:
+            if attempt < _MAX_RETRIES - 1:
+                logger.info('BGG returned 202 for thing batch — retrying (%d/%d)', attempt + 1, _MAX_RETRIES)
+                time.sleep(_RETRY_DELAY)
+                continue
+            raise BGGError('BoardGameGeek is still processing game data. Please try again.')
+
+        if resp.status_code != 200:
+            raise BGGError(f'BGG thing batch returned HTTP {resp.status_code}')
+
+        break
 
     try:
         root = ET.fromstring(resp.text)

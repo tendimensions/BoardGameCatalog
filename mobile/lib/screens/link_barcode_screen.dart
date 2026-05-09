@@ -664,9 +664,28 @@ class _BggSearchTabState extends State<_BggSearchTab>
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(_searchError!,
-              style: const TextStyle(color: Color(0xFFe57373)),
-              textAlign: TextAlign.center),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_outlined, color: Color(0xFFe57373), size: 36),
+              const SizedBox(height: 12),
+              Text(
+                _searchError!,
+                style: const TextStyle(color: Color(0xFFe57373), fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Try again'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF7eb8f7),
+                  side: const BorderSide(color: Color(0xFF7eb8f7)),
+                ),
+                onPressed: () => _doSearch(_searchController.text.trim()),
+              ),
+            ],
+          ),
         ),
       );
     }
