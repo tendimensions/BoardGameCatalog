@@ -3,7 +3,8 @@
 # =============================================================================
 #
 # Builds Android (APK) and iOS (IPA) and distributes via Firebase App Distribution.
-# Release notes are extracted from mobile/CHANGELOG.md (latest entry only).
+# Release notes are generated into release_notes.txt from the top section of
+# mobile/CHANGELOG.md before each build.
 #
 # REQUIRED SECRETS — set these in CodeMagic → Teams → Global variables / secrets:
 #
@@ -40,6 +41,9 @@ workflows:
       - name: Get packages
         script: flutter pub get
         working_directory: mobile
+
+      - name: Generate Firebase release notes
+        script: python3 scripts/generate_release_notes.py
 
       - name: Build APK
         script: |
@@ -100,6 +104,9 @@ workflows:
         script: flutter pub get
         working_directory: mobile
 
+      - name: Generate Firebase release notes
+        script: python3 scripts/generate_release_notes.py
+
       - name: Build IPA
         script: |
           flutter build ipa --release \
@@ -159,6 +166,9 @@ workflows:
       - name: Get packages
         script: flutter pub get
         working_directory: mobile
+
+      - name: Generate Firebase release notes
+        script: python3 scripts/generate_release_notes.py
 
       - name: Build APK
         script: |

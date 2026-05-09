@@ -1,7 +1,7 @@
 name: boardgamecatalog
 description: "Board Game Catalog — manage your collection and scan barcodes."
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ^3.11.0
@@ -47,3 +47,4 @@ flutter:
   assets:
     - assets/sounds/beep_success.mp3
     - assets/sounds/beep_error.mp3
+    - assets/images/app_icon.png
