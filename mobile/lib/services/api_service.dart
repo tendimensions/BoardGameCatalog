@@ -137,8 +137,15 @@ class ApiService {
     final resp = await http
         .get(_uri('/lists'), headers: _headers)
         .timeout(const Duration(seconds: 10));
-    final body = await _checkResponse(resp);
-    return (body as List<dynamic>)
+    if (resp.statusCode == 401 || resp.statusCode == 403) {
+      throw ApiException(resp.statusCode, 'Invalid or expired API key.');
+    }
+    if (resp.statusCode >= 400) {
+      final err = jsonDecode(resp.body) as Map<String, dynamic>;
+      final msg = err['error'] as String? ?? 'Unexpected error (${resp.statusCode})';
+      throw ApiException(resp.statusCode, msg);
+    }
+    return (jsonDecode(resp.body) as List<dynamic>)
         .map((e) => GameList.fromJson(e as Map<String, dynamic>))
         .toList();
   }
