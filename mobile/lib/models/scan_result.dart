@@ -1,6 +1,7 @@
+import 'bgg_candidate.dart';
 import 'game.dart';
 
-enum ScanStatus { success, notFound, awaitingLink, error, duplicate }
+enum ScanStatus { success, notFound, awaitingLink, needsSelection, error, duplicate }
 
 class ScanResult {
   final String upc;
@@ -12,6 +13,7 @@ class ScanResult {
   final String? listName;
   final String? errorMessage;
   final DateTime scannedAt;
+  final List<BggCandidate>? suggestions;
 
   ScanResult({
     required this.upc,
@@ -23,6 +25,7 @@ class ScanResult {
     this.listName,
     this.errorMessage,
     DateTime? scannedAt,
+    this.suggestions,
   }) : scannedAt = scannedAt ?? DateTime.now();
 
   String get statusLabel {
@@ -37,6 +40,8 @@ class ScanResult {
         return 'Not found in GameUPC';
       case ScanStatus.awaitingLink:
         return 'Tap to link to a game';
+      case ScanStatus.needsSelection:
+        return 'Tap to identify game';
       case ScanStatus.error:
         return 'Error';
       case ScanStatus.duplicate:

@@ -149,6 +149,148 @@ def fetch_collection(username: str) -> list[BGGGame]:
     return parse_collection_xml(response.text)
 
 
+def fetch_thing(bgg_id: int) -> BGGGame:
+    """
+    Fetch a single board game's metadata from BGG by its ID.
+
+    Used by scan confirm and link flows when the game is not yet in our DB.
+    Raises BGGError on network or API errors, or if the game is not found.
+    """
+    url = f'{_BGG_BASE}/thing'
+    params = {'id': bgg_id, 'type': 'boardgame'}
+    headers = {
+        'User-Agent': 'BoardGameCatalog/1.0 (https://boardgames.tendimensions.com)',
+    }
+    try:
+        time.sleep(_REQUEST_DELAY)
+        resp = requests.get(url, params=params, headers=headers, timeout=30)
+    except requests.RequestException as exc:
+        raise BGGError(f'Could not reach BoardGameGeek: {exc}') from exc
+
+    if resp.status_code != 200:
+        raise BGGError(f'BGG returned HTTP {resp.status_code} for thing {bgg_id}')
+
+    try:
+        root = ET.fromstring(resp.text)
+    except ET.ParseError as exc:
+        raise BGGError(f'Invalid BGG response: {exc}') from exc
+
+    item = root.find('item')
+    if item is None:
+        raise BGGError(f'Game {bgg_id} not found on BGG')
+
+    primary_name = item.find("name[@type='primary']")
+    title = primary_name.get('value', 'Unknown') if primary_name is not None else 'Unknown'
+
+    year_el = item.find('yearpublished')
+    year = _int_or_none(year_el.get('value')) if year_el is not None else None
+
+    min_el = item.find('minplayers')
+    max_el = item.find('maxplayers')
+    time_el = item.find('playingtime')
+
+    return BGGGame(
+        bgg_id=bgg_id,
+        title=title,
+        year_published=year,
+        min_players=_int_or_none(min_el.get('value')) if min_el is not None else None,
+        max_players=_int_or_none(max_el.get('value')) if max_el is not None else None,
+        playing_time=_int_or_none(time_el.get('value')) if time_el is not None else None,
+        thumbnail_url=_fix_url(item.findtext('thumbnail', default='')),
+        image_url=_fix_url(item.findtext('image', default='')),
+    )
+
+
+def search_games(query: str, limit: int = 10) -> list[BGGGame]:
+    """
+    Search BGG for board games by name. Returns up to `limit` results with
+    full metadata (thumbnail included via a follow-up /thing batch call).
+
+    Raises BGGError on network or API errors.
+    """
+    search_url = f'{_BGG_BASE}/search'
+    headers = {
+        'User-Agent': 'BoardGameCatalog/1.0 (https://boardgames.tendimensions.com)',
+    }
+    try:
+        time.sleep(_REQUEST_DELAY)
+        resp = requests.get(
+            search_url,
+            params={'query': query, 'type': 'boardgame'},
+            headers=headers,
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        raise BGGError(f'Could not reach BoardGameGeek: {exc}') from exc
+
+    if resp.status_code != 200:
+        raise BGGError(f'BGG search returned HTTP {resp.status_code}')
+
+    try:
+        root = ET.fromstring(resp.text)
+    except ET.ParseError as exc:
+        raise BGGError(f'Invalid BGG search response: {exc}') from exc
+
+    # Collect BGG IDs from search results
+    ids = []
+    for item in root.findall('item'):
+        bgg_id = _int_or_none(item.get('objectid') or item.get('id'))
+        if bgg_id:
+            ids.append(bgg_id)
+        if len(ids) >= limit:
+            break
+
+    if not ids:
+        return []
+
+    # Batch-fetch full metadata (includes thumbnails) for the matched IDs
+    thing_url = f'{_BGG_BASE}/thing'
+    try:
+        time.sleep(_REQUEST_DELAY)
+        resp = requests.get(
+            thing_url,
+            params={'id': ','.join(str(i) for i in ids), 'type': 'boardgame'},
+            headers=headers,
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        raise BGGError(f'Could not reach BoardGameGeek: {exc}') from exc
+
+    if resp.status_code != 200:
+        raise BGGError(f'BGG thing batch returned HTTP {resp.status_code}')
+
+    try:
+        root = ET.fromstring(resp.text)
+    except ET.ParseError as exc:
+        raise BGGError(f'Invalid BGG thing response: {exc}') from exc
+
+    # Return in the same order as the search results
+    games_by_id: dict[int, BGGGame] = {}
+    for item in root.findall('item'):
+        bgg_id = _int_or_none(item.get('id'))
+        if bgg_id is None:
+            continue
+        primary_name = item.find("name[@type='primary']")
+        title = primary_name.get('value', 'Unknown') if primary_name is not None else 'Unknown'
+        year_el = item.find('yearpublished')
+        year = _int_or_none(year_el.get('value')) if year_el is not None else None
+        min_el = item.find('minplayers')
+        max_el = item.find('maxplayers')
+        time_el = item.find('playingtime')
+        games_by_id[bgg_id] = BGGGame(
+            bgg_id=bgg_id,
+            title=title,
+            year_published=year,
+            min_players=_int_or_none(min_el.get('value')) if min_el is not None else None,
+            max_players=_int_or_none(max_el.get('value')) if max_el is not None else None,
+            playing_time=_int_or_none(time_el.get('value')) if time_el is not None else None,
+            thumbnail_url=_fix_url(item.findtext('thumbnail', default='')),
+            image_url=_fix_url(item.findtext('image', default='')),
+        )
+
+    return [games_by_id[i] for i in ids if i in games_by_id]
+
+
 def _fix_url(url: str) -> str:
     url = (url or '').strip()
     if url.startswith('//'):

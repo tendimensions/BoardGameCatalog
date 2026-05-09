@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/api_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -13,6 +15,14 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   String _version = '—';
 
+  // GameUPC test state
+  bool _testRunning = false;
+  int _testCooldown = 0;
+  Timer? _cooldownTimer;
+  String? _testEnvironment;
+  List<Map<String, dynamic>>? _testResults;
+  String? _testError;
+
   @override
   void initState() {
     super.initState();
@@ -20,6 +30,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         setState(() => _version = '${info.version} (${info.buildNumber})');
       }
+    });
+  }
+
+  @override
+  void dispose() {
+    _cooldownTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _runGameUpcTest() async {
+    if (_testRunning || _testCooldown > 0) return;
+
+    final apiKey = context.read<AuthProvider>().apiKey!;
+    setState(() {
+      _testRunning = true;
+      _testResults = null;
+      _testError = null;
+    });
+
+    try {
+      final result = await ApiService(apiKey).testGameUpc();
+      if (!mounted) return;
+      setState(() {
+        _testRunning = false;
+        _testEnvironment = result.environment;
+        _testResults = result.results;
+        _testCooldown = 30;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _testRunning = false;
+        _testError = e.message;
+        _testCooldown = 30;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _testRunning = false;
+        _testError = 'Could not reach server. Check your connection.';
+        _testCooldown = 30;
+      });
+    }
+
+    // 30-second client-side cooldown (no server-side rate limit needed)
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      setState(() {
+        _testCooldown--;
+        if (_testCooldown <= 0) {
+          _testCooldown = 0;
+          t.cancel();
+        }
+      });
     });
   }
 
@@ -47,6 +114,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ? '••••••••••••••••${auth.apiKey!.substring(auth.apiKey!.length - 8)}'
                   : '—',
             ),
+            const SizedBox(height: 8),
+
+            // ── GameUPC Integration ───────────────────────────────────────
+            _SectionHeader('GameUPC Integration'),
+            if (_testEnvironment != null)
+              _InfoTile(
+                icon: Icons.cloud_outlined,
+                label: 'Environment',
+                value: _testEnvironment!.toUpperCase(),
+              ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: (_testRunning || _testCooldown > 0) ? null : _runGameUpcTest,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1a1a2e),
+                  foregroundColor: const Color(0xFF7eb8f7),
+                  disabledBackgroundColor: const Color(0xFF111111),
+                  disabledForegroundColor: const Color(0xFF444444),
+                  side: BorderSide(
+                    color: (_testRunning || _testCooldown > 0)
+                        ? const Color(0xFF333333)
+                        : const Color(0xFF7eb8f7),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: _testRunning
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Color(0xFF7eb8f7)),
+                      )
+                    : Text(
+                        _testCooldown > 0
+                            ? 'Run Integration Tests — ${_testCooldown}s'
+                            : 'Run Integration Tests',
+                      ),
+              ),
+            ),
+            if (_testError != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1a0000),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF5a1a1a)),
+                ),
+                child: Text(_testError!,
+                    style: const TextStyle(color: Color(0xFFe57373), fontSize: 13)),
+              ),
+            ],
+            if (_testResults != null) ...[
+              const SizedBox(height: 8),
+              ..._testResults!.map((r) => _TestResultTile(result: r)),
+            ],
             const SizedBox(height: 8),
 
             // ── About ─────────────────────────────────────────────────────
@@ -115,6 +243,85 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
+
+class _TestResultTile extends StatelessWidget {
+  final Map<String, dynamic> result;
+
+  const _TestResultTile({required this.result});
+
+  bool get _passed {
+    final s = result['status'] as String? ?? '';
+    final count = result['candidate_count'] as int? ?? 0;
+    final caseLabel = result['case'] as String? ?? '';
+    if (s != 'ok') return false;
+    if (caseLabel == 'verified') return count == 1;
+    if (caseLabel == 'ambiguous') return count >= 2;
+    if (caseLabel == 'unknown') return true;
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ok = _passed;
+    final upc = result['upc'] as String? ?? '';
+    final caseLabel = (result['case'] as String? ?? '').toUpperCase();
+    final title = result['title'] as String?;
+    final bggId = result['bgg_id'];
+    final count = result['candidate_count'] as int? ?? 0;
+    final error = result['error'] as String?;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 1),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ok ? const Color(0xFF0a1a0a) : const Color(0xFF1a0a0a),
+        border: Border(
+          left: BorderSide(
+            color: ok ? const Color(0xFF2e7d32) : const Color(0xFF5a1a1a),
+            width: 3,
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                ok ? Icons.check_circle_outline : Icons.error_outline,
+                color: ok ? const Color(0xFF81c784) : const Color(0xFFe57373),
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'UPC $upc — $caseLabel',
+                style: TextStyle(
+                  color: ok ? const Color(0xFF81c784) : const Color(0xFFe57373),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          if (error != null)
+            Text(error,
+                style: const TextStyle(color: Color(0xFFe57373), fontSize: 12))
+          else if (title != null && bggId != null)
+            Text('$title (BGG $bggId) · $count candidate',
+                style: const TextStyle(color: Color(0xFF888888), fontSize: 12))
+          else
+            Text(
+              '$count ${count == 1 ? 'candidate' : 'candidates'} returned',
+              style: const TextStyle(color: Color(0xFF888888), fontSize: 12),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+
 class _SectionHeader extends StatelessWidget {
   final String title;
   const _SectionHeader(this.title);
@@ -162,12 +369,10 @@ class _InfoTile extends StatelessWidget {
           Icon(icon, size: 18, color: const Color(0xFF555555)),
           const SizedBox(width: 12),
           Text(label,
-              style: const TextStyle(
-                  color: Color(0xFF888888), fontSize: 13)),
+              style: const TextStyle(color: Color(0xFF888888), fontSize: 13)),
           const Spacer(),
           Text(value,
-              style: const TextStyle(
-                  color: Color(0xFFdddddd), fontSize: 13)),
+              style: const TextStyle(color: Color(0xFFdddddd), fontSize: 13)),
         ],
       ),
     );
