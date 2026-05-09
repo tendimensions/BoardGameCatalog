@@ -118,3 +118,75 @@ workflows:
           app_id: $FIREBASE_IOS_APP_ID
           groups:
             - testers
+
+  # ── iOS + Android ─────────────────────────────────────────────────────────────
+  all-release:
+    name: iOS + Android — Firebase Distribution
+    instance_type: mac_mini_m1
+    max_build_duration: 90
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      groups:
+        - firebase_credentials
+        - ios_signing
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+    scripts:
+      - name: Set up keychain
+        script: keychain initialize
+
+      - name: Install certificate and provisioning profile
+        script: |
+          echo "$CM_CERTIFICATE" | base64 --decode > /tmp/certificate.p12
+          keychain add-certificates \
+            --certificate /tmp/certificate.p12 \
+            --certificate-password "$CM_CERTIFICATE_PASSWORD"
+          PROFILES_HOME="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES_HOME"
+          echo "$CM_PROVISIONING_PROFILE" | base64 --decode > \
+            "$PROFILES_HOME/$(uuidgen).mobileprovision"
+
+      - name: Set up code signing
+        script: xcode-project use-profiles
+        working_directory: mobile
+
+      - name: Get packages
+        script: flutter pub get
+        working_directory: mobile
+
+      - name: Build APK
+        script: |
+          flutter build apk --release \
+            --build-name=$PROJECT_BUILD_VERSION \
+            --build-number=$BUILD_NUMBER
+        working_directory: mobile
+
+      - name: Build IPA
+        script: |
+          flutter build ipa --release \
+            --build-name=$PROJECT_BUILD_VERSION \
+            --build-number=$BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist
+        working_directory: mobile
+
+    artifacts:
+      - mobile/build/app/outputs/flutter-apk/app-release.apk
+      - mobile/build/ios/ipa/*.ipa
+
+    publishing:
+      firebase:
+        firebase_service_account: $FIREBASE_SERVICE_ACCOUNT
+        android:
+          app_id: $FIREBASE_ANDROID_APP_ID
+          groups:
+            - testers
+        ios:
+          app_id: $FIREBASE_IOS_APP_ID
+          groups:
+            - testers
