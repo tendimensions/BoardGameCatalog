@@ -40,10 +40,10 @@ class _SetupScreenState extends State<SetupScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(
-                    Icons.casino_outlined,
-                    size: 72,
-                    color: Color(0xFF7eb8f7),
+                  Image.asset(
+                    'assets/images/app_icon.png',
+                    width: 72,
+                    height: 72,
                   ),
                   const SizedBox(height: 24),
                   const Text(
@@ -101,7 +101,10 @@ class _SetupScreenState extends State<SetupScreen> {
                   // API key field
                   TextField(
                     controller: _controller,
-                    style: const TextStyle(color: Color(0xFFdddddd), fontFamily: 'monospace'),
+                    style: const TextStyle(
+                      color: Color(0xFFdddddd),
+                      fontFamily: 'monospace',
+                    ),
                     decoration: InputDecoration(
                       labelText: 'API Key',
                       labelStyle: const TextStyle(color: Color(0xFF888888)),

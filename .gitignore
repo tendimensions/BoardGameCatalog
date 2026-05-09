@@ -55,3 +55,4 @@ mobile/ios/Flutter/Flutter.podspec
 # CodeMagic / CI
 codemagic_exports/
 app.info
+release_notes.txt

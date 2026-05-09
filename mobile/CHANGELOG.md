@@ -1,8 +1,23 @@
 # Mobile App Changelog
 
-All notable changes to the Board Game Catalog Flutter app.
+## Firebase Release Notes
+- Reordered the bottom navigation to Collection, Lists, Scan, Settings.
+- Replaced the first-run setup screen icon with the app icon.
+- Added CodeMagic release-note generation from this changelog section.
 
 ---
+
+All notable changes to the Board Game Catalog Flutter app.
+
+## [1.0.1] — 2026-05-09
+
+### Changed
+- Reordered the mobile bottom navigation to Collection, Lists, Scan, Settings
+- Replaced the setup screen die icon with the app icon
+
+### CI/CD
+- Added CodeMagic release note generation from the top section of this changelog
+- Published generated release notes to Firebase App Distribution via `release_notes.txt`
 
 ## [1.0.0] — 2026-03-15
 

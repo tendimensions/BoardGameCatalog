@@ -50,19 +50,19 @@ class _AppShellState extends State<_AppShell> {
   // Scan is handled as a pushed route and never becomes the active body tab.
   int _bodyIndex = 0;
 
-  // Navigation bar destinations: Scan(0), Collection(1), Lists(2), Settings(3).
-  // Scan is always index 0 in the nav bar but routes instead of switching body.
+  // Navigation bar destinations: Collection(0), Lists(1), Scan(2), Settings(3).
+  // Scan routes to a separate screen instead of switching the active body tab.
   static const _bodyTabs = [
     CollectionScreen(),
     ListsScreen(),
     SettingsScreen(),
   ];
 
-  static const _labels = ['Scan', 'Collection', 'Lists', 'Settings'];
+  static const _labels = ['Collection', 'Lists', 'Scan', 'Settings'];
   static const _icons = [
-    Icons.qr_code_scanner,
     Icons.casino_outlined,
     Icons.list_alt_outlined,
+    Icons.qr_code_scanner,
     Icons.settings_outlined,
   ];
 
@@ -75,15 +75,23 @@ class _AppShellState extends State<_AppShell> {
   }
 
   void _onNavTap(int i) {
-    if (i == 0) {
+    if (i == 2) {
       // Scan tab — push the mode-selection screen as a route
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const ScanModeScreen()),
       );
     } else {
-      setState(() => _bodyIndex = i - 1);
+      setState(() => _bodyIndex = i > 2 ? i - 1 : i);
     }
+  }
+
+  int get _selectedNavIndex {
+    return switch (_bodyIndex) {
+      0 => 0,
+      1 => 1,
+      _ => 3,
+    };
   }
 
   @override
@@ -108,15 +116,12 @@ class _AppShellState extends State<_AppShell> {
     // Main app with bottom nav
     return Scaffold(
       backgroundColor: const Color(0xFF0f0f0f),
-      body: IndexedStack(
-        index: _bodyIndex,
-        children: _bodyTabs,
-      ),
+      body: IndexedStack(index: _bodyIndex, children: _bodyTabs),
       bottomNavigationBar: NavigationBar(
         backgroundColor: const Color(0xFF1a1a2e),
         indicatorColor: const Color(0xFF7eb8f7).withAlpha(50),
-        // Scan tab is never "selected"; offset by 1 to map body index to nav index
-        selectedIndex: _bodyIndex + 1,
+        // Scan launches a route instead of becoming the active tab.
+        selectedIndex: _selectedNavIndex,
         onDestinationSelected: _onNavTap,
         destinations: List.generate(
           _labels.length,
