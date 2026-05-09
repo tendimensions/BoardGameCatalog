@@ -17,8 +17,10 @@ from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 
 from accounts.models import APIKey
+from . import bgg as bgg_client
 from . import gameupc as gameupc_client
-from .gameupc import GameNotFound, GameUPCError
+from .bgg import BGGError
+from .gameupc import GameNotFound, GameUPCCandidates, GameUPCError, GameUPCResult
 from .models import Game, GameList, GameListEntry, UserCollection, UnlinkedBarcode
 from .serializers import (
     CollectionItemSerializer,
@@ -175,15 +177,11 @@ class BarcodeScanView(APIView):
     Optionally add the resolved game to a list when list_id is supplied (REQ-GL-035 through REQ-GL-040).
 
     Request:  { "upc": "012345678901", "list_id": 7 }   ← list_id is optional (Mode B)
-    Response: { "game": {...}, "added_to_collection": bool, "updated_existing": bool,
-                "added_to_list": bool, "already_on_list": bool }   ← list fields only when list_id given
 
-    Processing order:
-      1. Look up the UPC on GameUPC.com.
-      2. If the game already exists in our DB (by UPC or title match), update UPC if missing.
-      3. If it doesn't exist, create a new Game record.
-      4. Add to the user's collection if not already present.
-      5. If list_id supplied, add the game to that list (Mode B — REQ-GL-037).
+    Three response shapes depending on GameUPC result:
+      Case 1 (verified):   HTTP 200/201 with game data
+      Case 2 (ambiguous):  HTTP 200 with status: "needs_selection" and suggestions array
+      Case 3 (unknown):    HTTP 404 with awaiting_link: true; UnlinkedBarcode saved
     """
 
     permission_classes = [IsAuthenticated]
@@ -210,10 +208,9 @@ class BarcodeScanView(APIView):
 
         # ── Step 1: GameUPC lookup ────────────────────────────────────────────
         try:
-            result = gameupc_client.lookup_barcode(upc)
+            lookup = gameupc_client.lookup_barcode(upc)
         except GameNotFound:
-            # Save the barcode so the user can link it to a game (REQ-CM-040).
-            # update_or_create handles re-scans of the same unrecognised barcode.
+            # Case 3 — save the barcode so the user can link it (REQ-CM-040)
             UnlinkedBarcode.objects.update_or_create(
                 user=request.user,
                 upc=upc,
@@ -226,7 +223,6 @@ class BarcodeScanView(APIView):
                 'awaiting_link': True,
             }
             if target_list:
-                # REQ-GL-040: inform the user which list was active
                 response_body['active_list_name'] = target_list.name
             return Response(response_body, status=status.HTTP_404_NOT_FOUND)
         except GameUPCError as exc:
@@ -236,43 +232,60 @@ class BarcodeScanView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-        # ── Step 2 & 3: Find or create the Game record ────────────────────────
+        # ── Case 2 — ambiguous: return candidates, do not add to collection ───
+        if isinstance(lookup, GameUPCCandidates):
+            suggestions = [
+                {
+                    'bgg_id': c.bgg_id,
+                    'title': c.title,
+                    'year_published': c.year_published,
+                    'thumbnail_url': c.thumbnail_url,
+                    'confidence': c.confidence,
+                }
+                for c in lookup.candidates
+            ]
+            response_body = {
+                'status': 'needs_selection',
+                'upc': upc,
+                'suggestions': suggestions,
+            }
+            if target_list:
+                response_body['active_list_name'] = target_list.name
+            return Response(response_body, status=status.HTTP_200_OK)
+
+        # ── Case 1 — verified: auto-resolve ───────────────────────────────────
+        result = lookup  # GameUPCResult
+        candidate = result.candidate
         updated_existing = False
 
-        # First try to find by UPC
         game = Game.objects.filter(upc=upc).first()
 
-        if game is None and result.title != 'Unknown':
-            # Fall back to title match (handles games synced from BGG without UPC)
-            game = Game.objects.filter(title__iexact=result.title).first()
+        if game is None and candidate.title != 'Unknown':
+            game = Game.objects.filter(title__iexact=candidate.title).first()
 
         if game is None:
-            # Create a brand-new game record
             game = Game.objects.create(
                 upc=upc,
-                bgg_id=result.bgg_id,
-                title=result.title,
-                year_published=result.year_published,
-                min_players=result.min_players,
-                max_players=result.max_players,
-                playing_time=result.playing_time,
-                thumbnail_url=result.thumbnail_url,
-                image_url=result.image_url,
+                bgg_id=candidate.bgg_id,
+                title=candidate.title,
+                year_published=candidate.year_published,
+                min_players=candidate.min_players,
+                max_players=candidate.max_players,
+                playing_time=candidate.playing_time,
+                thumbnail_url=candidate.thumbnail_url,
+                image_url=candidate.image_url,
             )
         elif not game.upc:
-            # Game exists (from BGG sync) but has no UPC — stamp it in
             game.upc = upc
             game.save(update_fields=['upc', 'updated_at'])
             updated_existing = True
 
-        # ── Step 4: Add to collection ─────────────────────────────────────────
         _, added_to_collection = UserCollection.objects.get_or_create(
             user=request.user,
             game=game,
             defaults={'source': UserCollection.SOURCE_BARCODE},
         )
 
-        # ── Step 5: Add to list if Mode B ─────────────────────────────────────
         response_body = {
             'game': GameSerializer(game).data,
             'added_to_collection': added_to_collection,
@@ -302,22 +315,106 @@ class BarcodeScanView(APIView):
         return Response(response_body, status=http_status)
 
 
+class ConfirmScanView(APIView):
+    """
+    POST /api/v1/scan/confirm
+
+    Handles the user's candidate selection for Case 2 (ambiguous barcode).
+
+    Request:  { "upc": "222222222224", "bgg_id": 284108 }
+    Response: { "game": {...}, "added_to_collection": bool, "submitted_to_gameupc": bool }
+
+    Fetches game metadata from BGG if not already in DB, adds to collection,
+    stamps the UPC, and submits the mapping to GameUPC.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        upc = (request.data.get('upc') or '').strip()
+        bgg_id = request.data.get('bgg_id')
+
+        if not upc or not bgg_id:
+            return Response(
+                {'error': 'upc and bgg_id are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            bgg_id = int(bgg_id)
+        except (TypeError, ValueError):
+            return Response({'error': 'bgg_id must be an integer.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        game = Game.objects.filter(bgg_id=bgg_id).first()
+
+        if game is None:
+            try:
+                bgg_game = bgg_client.fetch_thing(bgg_id)
+            except BGGError as exc:
+                logger.warning('BGG fetch_thing failed for bgg_id %s: %s', bgg_id, exc)
+                return Response(
+                    {'error': 'Could not fetch game data from BoardGameGeek. Please try again.'},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            game = Game.objects.create(
+                upc=upc,
+                bgg_id=bgg_game.bgg_id,
+                title=bgg_game.title,
+                year_published=bgg_game.year_published,
+                min_players=bgg_game.min_players,
+                max_players=bgg_game.max_players,
+                playing_time=bgg_game.playing_time,
+                thumbnail_url=bgg_game.thumbnail_url,
+                image_url=bgg_game.image_url,
+            )
+        else:
+            if not game.upc:
+                game.upc = upc
+                game.save(update_fields=['upc', 'updated_at'])
+
+        _, added_to_collection = UserCollection.objects.get_or_create(
+            user=request.user,
+            game=game,
+            defaults={'source': UserCollection.SOURCE_BARCODE},
+        )
+
+        submitted = gameupc_client.submit_barcode_mapping(upc, bgg_id, request.user.id)
+
+        logger.info(
+            'User %s confirmed barcode %s → game %s (BGG %s), submitted=%s',
+            request.user.username, upc, game.title, bgg_id, submitted,
+        )
+
+        http_status = status.HTTP_201_CREATED if added_to_collection else status.HTTP_200_OK
+        return Response(
+            {
+                'game': GameSerializer(game).data,
+                'added_to_collection': added_to_collection,
+                'submitted_to_gameupc': submitted,
+            },
+            status=http_status,
+        )
+
+
 # ── Unknown barcode linking ───────────────────────────────────────────────────
 
 class LinkBarcodeView(APIView):
     """
     POST /api/v1/scan/link
 
-    Links a previously unrecognised barcode to a game in the user's collection
-    and submits the mapping to GameUPC.com as a community contribution
-    (REQ-CM-044 through REQ-CM-048).
+    Links a previously unrecognised barcode to a game.
 
-    Request:  { "upc": "012345678901", "game_id": 42 }
+    Two modes — exactly one of game_id or bgg_id must be supplied:
+
+    Mode A (collection game):
+      Request:  { "upc": "...", "game_id": 42 }
+      The game must already be in the user's collection.
+
+    Mode B (BGG search result — Case 3 extended path):
+      Request:  { "upc": "...", "bgg_id": 12345 }
+      The game is fetched from BGG, created if new, added to collection.
+
     Response: { "game": {...}, "submitted_to_gameupc": bool }
-
-    The UnlinkedBarcode record is deleted on success.  The game's upc field
-    is stamped.  If the game has no bgg_id the GameUPC submission is skipped
-    (REQ-CM-047) and submitted_to_gameupc is false.
     """
 
     permission_classes = [IsAuthenticated]
@@ -325,17 +422,33 @@ class LinkBarcodeView(APIView):
     def post(self, request):
         upc = (request.data.get('upc') or '').strip()
         game_id = request.data.get('game_id')
+        bgg_id = request.data.get('bgg_id')
 
-        if not upc or not game_id:
+        if not upc:
+            return Response({'error': 'upc is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not game_id and not bgg_id:
             return Response(
-                {'error': 'upc and game_id are required.'},
+                {'error': 'Either game_id or bgg_id is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if game_id and bgg_id:
+            return Response(
+                {'error': 'Provide either game_id or bgg_id, not both.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Verify the pending barcode belongs to this user (REQ-CM-040)
         unlinked = get_object_or_404(UnlinkedBarcode, user=request.user, upc=upc)
 
-        # Game must be in the user's collection
+        if game_id:
+            return self._link_by_game_id(request, upc, game_id, unlinked)
+        else:
+            return self._link_by_bgg_id(request, upc, int(bgg_id), unlinked)
+
+    def _link_by_game_id(self, request, upc, game_id, unlinked):
+        """Link to a game already in the user's collection."""
         try:
             collection_item = (
                 UserCollection.objects
@@ -356,11 +469,9 @@ class LinkBarcodeView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        # Stamp the UPC onto the game record
         game.upc = upc
         game.save(update_fields=['upc', 'updated_at'])
 
-        # Submit to GameUPC if we have a BGG ID (REQ-CM-045, REQ-CM-047)
         submitted = False
         if game.bgg_id:
             submitted = gameupc_client.submit_barcode_mapping(upc, game.bgg_id, request.user.id)
@@ -380,14 +491,59 @@ class LinkBarcodeView(APIView):
                 request.user.username, upc, game.title,
             )
 
-        # Clean up the pending record (REQ-CM-048)
         unlinked.delete()
 
         return Response(
-            {
-                'game': GameSerializer(game).data,
-                'submitted_to_gameupc': submitted,
-            },
+            {'game': GameSerializer(game).data, 'submitted_to_gameupc': submitted},
+            status=status.HTTP_200_OK,
+        )
+
+    def _link_by_bgg_id(self, request, upc, bgg_id, unlinked):
+        """Fetch game from BGG, create if new, add to collection, submit to GameUPC."""
+        game = Game.objects.filter(bgg_id=bgg_id).first()
+
+        if game is None:
+            try:
+                bgg_game = bgg_client.fetch_thing(bgg_id)
+            except BGGError as exc:
+                logger.warning('BGG fetch_thing failed for bgg_id %s: %s', bgg_id, exc)
+                return Response(
+                    {'error': 'Could not fetch game data from BoardGameGeek. Please try again.'},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            game = Game.objects.create(
+                upc=upc,
+                bgg_id=bgg_game.bgg_id,
+                title=bgg_game.title,
+                year_published=bgg_game.year_published,
+                min_players=bgg_game.min_players,
+                max_players=bgg_game.max_players,
+                playing_time=bgg_game.playing_time,
+                thumbnail_url=bgg_game.thumbnail_url,
+                image_url=bgg_game.image_url,
+            )
+        else:
+            if not game.upc:
+                game.upc = upc
+                game.save(update_fields=['upc', 'updated_at'])
+
+        UserCollection.objects.get_or_create(
+            user=request.user,
+            game=game,
+            defaults={'source': UserCollection.SOURCE_BARCODE},
+        )
+
+        submitted = gameupc_client.submit_barcode_mapping(upc, bgg_id, request.user.id)
+
+        logger.info(
+            'User %s linked barcode %s → BGG %s via search, submitted=%s',
+            request.user.username, upc, bgg_id, submitted,
+        )
+
+        unlinked.delete()
+
+        return Response(
+            {'game': GameSerializer(game).data, 'submitted_to_gameupc': submitted},
             status=status.HTTP_200_OK,
         )
 
@@ -406,6 +562,108 @@ class DiscardBarcodeView(APIView):
     def delete(self, request, upc):
         UnlinkedBarcode.objects.filter(user=request.user, upc=upc).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ── BGG game search ───────────────────────────────────────────────────────────
+
+class GameSearchView(APIView):
+    """
+    GET /api/v1/games/search?q=<name>
+
+    Proxies a BGG name search for the Case 3 "Search BGG" tab in LinkBarcodeScreen.
+    Returns up to 10 results (bgg_id, title, year_published, thumbnail_url).
+    Also annotates each result with already_owned=true if it's in the user's collection.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        query = request.GET.get('q', '').strip()
+        if not query:
+            return Response({'error': 'q is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            results = bgg_client.search_games(query, limit=10)
+        except BGGError as exc:
+            logger.warning('BGG search failed for query "%s": %s', query, exc)
+            return Response(
+                {'error': 'Could not reach BoardGameGeek. Please try again.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        # Determine which results are already in the user's collection
+        result_bgg_ids = [g.bgg_id for g in results]
+        owned_bgg_ids = set(
+            UserCollection.objects
+            .filter(user=request.user, game__bgg_id__in=result_bgg_ids)
+            .values_list('game__bgg_id', flat=True)
+        )
+
+        games = [
+            {
+                'bgg_id': g.bgg_id,
+                'title': g.title,
+                'year_published': g.year_published,
+                'min_players': g.min_players,
+                'max_players': g.max_players,
+                'playing_time': g.playing_time,
+                'thumbnail_url': g.thumbnail_url,
+                'image_url': g.image_url,
+                'already_owned': g.bgg_id in owned_bgg_ids,
+            }
+            for g in results
+        ]
+
+        return Response({'games': games})
+
+
+# ── GameUPC integration test ──────────────────────────────────────────────────
+
+class GameUPCTestView(APIView):
+    """
+    POST /api/v1/gameupc/test
+
+    Runs all three test UPCs against the configured GameUPC endpoint and returns
+    a structured summary.  Used by the Settings page integration test UI.
+    No games are added to any collection; no UPCs are submitted to GameUPC.
+    """
+
+    _TEST_CASES = [
+        ('111111111117', 'verified'),
+        ('222222222224', 'ambiguous'),
+        ('333333333331', 'unknown'),
+    ]
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from . import gameupc as _gu
+        env = 'test' if _gu._api_key() == 'test_test_test_test_test' else 'production'
+
+        results = []
+        for upc, expected_case in self._TEST_CASES:
+            entry = {'upc': upc, 'case': expected_case, 'error': None,
+                     'title': None, 'bgg_id': None, 'candidate_count': 0}
+            try:
+                lookup = gameupc_client.lookup_barcode(upc)
+                if isinstance(lookup, GameUPCResult):
+                    entry['status'] = 'ok'
+                    entry['title'] = lookup.candidate.title
+                    entry['bgg_id'] = lookup.candidate.bgg_id
+                    entry['candidate_count'] = 1
+                elif isinstance(lookup, GameUPCCandidates):
+                    entry['status'] = 'ok'
+                    entry['candidate_count'] = len(lookup.candidates)
+            except GameNotFound:
+                entry['status'] = 'ok'
+                entry['candidate_count'] = 0
+            except GameUPCError as exc:
+                entry['status'] = 'error'
+                entry['error'] = str(exc)
+
+            results.append(entry)
+
+        return Response({'environment': env, 'results': results})
 
 
 # ── Game Lists ────────────────────────────────────────────────────────────────

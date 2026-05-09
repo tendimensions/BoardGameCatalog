@@ -17,9 +17,29 @@ class ScanResultCard extends StatelessWidget {
         return const Color(0xFFffb74d);
       case ScanStatus.awaitingLink:
         return const Color(0xFFce93d8); // purple — action needed
+      case ScanStatus.needsSelection:
+        return const Color(0xFFffb74d); // amber — action needed
       case ScanStatus.error:
       case ScanStatus.duplicate:
         return const Color(0xFFe57373);
+    }
+  }
+
+  Widget _trailingIndicator() {
+    switch (result.status) {
+      case ScanStatus.awaitingLink:
+        return Icon(Icons.link, color: _statusColor, size: 18);
+      case ScanStatus.needsSelection:
+        return Icon(Icons.help_outline, color: _statusColor, size: 18);
+      default:
+        return Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: _statusColor,
+            shape: BoxShape.circle,
+          ),
+        );
     }
   }
 
@@ -80,18 +100,7 @@ class ScanResultCard extends StatelessWidget {
             ),
           ),
 
-          // Status indicator — link icon for awaiting, dot for everything else
-          if (result.status == ScanStatus.awaitingLink)
-            Icon(Icons.link, color: _statusColor, size: 18)
-          else
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: _statusColor,
-                shape: BoxShape.circle,
-              ),
-            ),
+          _trailingIndicator(),
         ],
       ),
     );

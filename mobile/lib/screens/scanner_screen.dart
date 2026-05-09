@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/collection_provider.dart';
 import '../services/api_service.dart';
 import '../widgets/scan_result_card.dart';
+import 'candidate_selection_sheet.dart';
 import 'link_barcode_screen.dart';
 
 class ScannerScreen extends StatefulWidget {
@@ -75,25 +76,36 @@ class _ScannerScreenState extends State<ScannerScreen>
     try {
       final response = await ApiService(apiKey)
           .scanBarcode(upc, listId: widget.listId);
-      await _audio.play(AssetSource('sounds/beep_success.mp3'), volume: 0.8);
 
-      if (widget.isModeB) {
+      if (response.needsSelection) {
+        // Case 2 — ambiguous: error beep, store candidates in history
+        await _audio.play(AssetSource('sounds/beep_error.mp3'), volume: 0.8);
         result = ScanResult(
-          upc: upc,
-          status: ScanStatus.success,
-          game: response.game,
-          addedToCollection: response.addedToCollection,
-          addedToList: response.addedToList,
-          alreadyOnList: response.alreadyOnList,
-          listName: response.activeListName ?? widget.listName,
+          upc: response.upc ?? upc,
+          status: ScanStatus.needsSelection,
+          suggestions: response.suggestions,
         );
       } else {
-        result = ScanResult(
-          upc: upc,
-          status: ScanStatus.success,
-          game: response.game,
-          addedToCollection: response.addedToCollection,
-        );
+        // Case 1 — resolved
+        await _audio.play(AssetSource('sounds/beep_success.mp3'), volume: 0.8);
+        if (widget.isModeB) {
+          result = ScanResult(
+            upc: upc,
+            status: ScanStatus.success,
+            game: response.game,
+            addedToCollection: response.addedToCollection,
+            addedToList: response.addedToList,
+            alreadyOnList: response.alreadyOnList,
+            listName: response.activeListName ?? widget.listName,
+          );
+        } else {
+          result = ScanResult(
+            upc: upc,
+            status: ScanStatus.success,
+            game: response.game,
+            addedToCollection: response.addedToCollection,
+          );
+        }
       }
     } on ApiException catch (e) {
       await _audio.play(AssetSource('sounds/beep_error.mp3'), volume: 0.8);
@@ -123,7 +135,6 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   /// Opens the link-barcode screen for an awaiting-link result.
-  /// On return, replaces the history entry with the outcome.
   Future<void> _openLinkScreen(ScanResult result) async {
     final apiKey = context.read<AuthProvider>().apiKey!;
     final linked = await Navigator.push<bool>(
@@ -138,7 +149,6 @@ class _ScannerScreenState extends State<ScannerScreen>
 
     if (!mounted) return;
 
-    // Refresh collection if a link was made
     if (linked == true) {
       context.read<CollectionProvider>().load(apiKey);
       setState(() {
@@ -148,12 +158,10 @@ class _ScannerScreenState extends State<ScannerScreen>
             upc: result.upc,
             status: ScanStatus.success,
             addedToCollection: false,
-            errorMessage: null,
           );
         }
       });
     } else {
-      // User dismissed — mark as notFound in history
       setState(() {
         final idx = _history.indexOf(result);
         if (idx != -1) {
@@ -161,6 +169,51 @@ class _ScannerScreenState extends State<ScannerScreen>
             upc: result.upc,
             status: ScanStatus.notFound,
             errorMessage: 'Not found in GameUPC — barcode discarded',
+          );
+        }
+      });
+    }
+  }
+
+  /// Opens the candidate selection sheet for a needsSelection result.
+  Future<void> _openCandidateSheet(ScanResult result) async {
+    if (result.suggestions == null || result.suggestions!.isEmpty) return;
+    final apiKey = context.read<AuthProvider>().apiKey!;
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => CandidateSelectionSheet(
+        upc: result.upc,
+        candidates: result.suggestions!,
+        apiKey: apiKey,
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (confirmed == true) {
+      context.read<CollectionProvider>().load(apiKey);
+      setState(() {
+        final idx = _history.indexOf(result);
+        if (idx != -1) {
+          _history[idx] = ScanResult(
+            upc: result.upc,
+            status: ScanStatus.success,
+            addedToCollection: true,
+          );
+        }
+      });
+    } else {
+      // Discarded — mark as notFound in history
+      setState(() {
+        final idx = _history.indexOf(result);
+        if (idx != -1) {
+          _history[idx] = ScanResult(
+            upc: result.upc,
+            status: ScanStatus.notFound,
+            errorMessage: 'No match selected — barcode discarded',
           );
         }
       });
@@ -220,7 +273,6 @@ class _ScannerScreenState extends State<ScannerScreen>
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // Back arrow (since scanner is always pushed as a route)
                           GestureDetector(
                             onTap: () => Navigator.pop(context),
                             child: const Icon(Icons.arrow_back,
@@ -309,9 +361,13 @@ class _ScannerScreenState extends State<ScannerScreen>
                       onDismissed: (_) =>
                           setState(() => _history.removeAt(i)),
                       child: GestureDetector(
-                        onTap: _history[i].status == ScanStatus.awaitingLink
-                            ? () => _openLinkScreen(_history[i])
-                            : null,
+                        onTap: switch (_history[i].status) {
+                          ScanStatus.awaitingLink =>
+                            () => _openLinkScreen(_history[i]),
+                          ScanStatus.needsSelection =>
+                            () => _openCandidateSheet(_history[i]),
+                          _ => null,
+                        },
                         child: ScanResultCard(result: _history[i]),
                       ),
                     ),

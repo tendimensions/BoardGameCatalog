@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../config/constants.dart';
+import '../models/bgg_candidate.dart';
 import '../models/collection_item.dart';
 import '../models/game.dart';
 import '../models/game_list.dart';
 import '../models/game_list_entry.dart';
+import '../models/scan_result.dart';
 
 class ApiException implements Exception {
   final int statusCode;
@@ -13,6 +15,29 @@ class ApiException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Returned by [ApiService.scanBarcode] to cover all three GameUPC scenarios.
+class ScanBarcodeResponse {
+  final Game? game;
+  final bool addedToCollection;
+  final bool? addedToList;
+  final bool? alreadyOnList;
+  final String? activeListName;
+  final bool needsSelection;
+  final String? upc;
+  final List<BggCandidate>? suggestions;
+
+  const ScanBarcodeResponse({
+    this.game,
+    this.addedToCollection = false,
+    this.addedToList,
+    this.alreadyOnList,
+    this.activeListName,
+    this.needsSelection = false,
+    this.upc,
+    this.suggestions,
+  });
 }
 
 class ApiService {
@@ -78,11 +103,16 @@ class ApiService {
         .toList();
   }
 
-  /// Submits a barcode scan. Returns a [Game] and whether it was newly added.
+  /// Submits a barcode scan. Returns a [ScanBarcodeResponse].
+  ///
+  /// Three outcomes:
+  ///   - game resolved (Case 1): [ScanBarcodeResponse.game] is set
+  ///   - needs selection (Case 2): [ScanBarcodeResponse.needsSelection] is true,
+  ///     [ScanBarcodeResponse.suggestions] holds the candidates
+  ///   - unknown barcode (Case 3): throws [ApiException] with statusCode 404
+  ///
   /// Pass [listId] to scan in Mode B (Add to List — REQ-GL-035 through REQ-GL-040).
-  /// Throws [ApiException] with statusCode 404 when the barcode is unknown.
-  Future<({Game game, bool addedToCollection, bool? addedToList, bool? alreadyOnList, String? activeListName})>
-      scanBarcode(String upc, {int? listId}) async {
+  Future<ScanBarcodeResponse> scanBarcode(String upc, {int? listId}) async {
     final payload = <String, dynamic>{'upc': upc};
     if (listId != null) payload['list_id'] = listId;
 
@@ -93,8 +123,25 @@ class ApiService {
           body: jsonEncode(payload),
         )
         .timeout(const Duration(seconds: 15));
+
+    // 404 = Case 3 — let the caller handle it as ApiException
     final body = await _checkResponse(resp);
-    return (
+
+    // Case 2 — ambiguous, needs user selection
+    if (body['status'] == 'needs_selection') {
+      final rawSuggestions = body['suggestions'] as List<dynamic>;
+      return ScanBarcodeResponse(
+        needsSelection: true,
+        upc: body['upc'] as String?,
+        activeListName: body['active_list_name'] as String?,
+        suggestions: rawSuggestions
+            .map((e) => BggCandidate.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+    }
+
+    // Case 1 — resolved
+    return ScanBarcodeResponse(
       game: Game.fromJson(body['game'] as Map<String, dynamic>),
       addedToCollection: body['added_to_collection'] as bool? ?? false,
       addedToList: body['added_to_list'] as bool?,
@@ -103,18 +150,47 @@ class ApiService {
     );
   }
 
-  /// Links a saved unlinked barcode to a game in the user's collection and
-  /// submits the mapping to GameUPC.com (REQ-CM-045, REQ-CM-046).
-  /// Returns the updated [Game] and whether GameUPC accepted the submission.
+  /// Confirms a candidate selection for Case 2 (ambiguous barcode).
+  /// Returns the resolved [Game] and whether the mapping was submitted to GameUPC.
+  Future<({Game game, bool addedToCollection, bool submittedToGameUpc})>
+      confirmScan(String upc, int bggId) async {
+    final resp = await http
+        .post(
+          _uri('/scan/confirm'),
+          headers: _headers,
+          body: jsonEncode({'upc': upc, 'bgg_id': bggId}),
+        )
+        .timeout(const Duration(seconds: 20));
+    final body = await _checkResponse(resp);
+    return (
+      game: Game.fromJson(body['game'] as Map<String, dynamic>),
+      addedToCollection: body['added_to_collection'] as bool? ?? false,
+      submittedToGameUpc: body['submitted_to_gameupc'] as bool? ?? false,
+    );
+  }
+
+  /// Links a saved unlinked barcode to a game.
+  ///
+  /// Supply [gameId] to link to an existing collection game (Case 3, "My Collection" tab).
+  /// Supply [bggId] to link via a BGG search result (Case 3, "Search BGG" tab).
+  /// Exactly one of the two must be non-null.
   Future<({Game game, bool submittedToGameUpc})> linkBarcode(
-      String upc, int gameId) async {
+      String upc, {int? gameId, int? bggId}) async {
+    assert(
+      (gameId == null) != (bggId == null),
+      'Exactly one of gameId or bggId must be provided',
+    );
+    final payload = <String, dynamic>{'upc': upc};
+    if (gameId != null) payload['game_id'] = gameId;
+    if (bggId != null) payload['bgg_id'] = bggId;
+
     final resp = await http
         .post(
           _uri('/scan/link'),
           headers: _headers,
-          body: jsonEncode({'upc': upc, 'game_id': gameId}),
+          body: jsonEncode(payload),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 20));
     final body = await _checkResponse(resp);
     return (
       game: Game.fromJson(body['game'] as Map<String, dynamic>),
@@ -128,6 +204,34 @@ class ApiService {
         .delete(_uri('/scan/unlinked/$upc'), headers: _headers)
         .timeout(const Duration(seconds: 10));
     // Silent — server returns 204 or ignores missing records.
+  }
+
+  /// Searches BGG by game name. Returns up to 10 results with thumbnails.
+  /// Games already in the user's collection are annotated with [alreadyOwned].
+  Future<List<BggSearchResult>> searchBgg(String query) async {
+    final resp = await http
+        .get(_uri('/games/search', {'q': query}), headers: _headers)
+        .timeout(const Duration(seconds: 20));
+    final body = await _checkResponse(resp);
+    final list = body['games'] as List<dynamic>;
+    return list
+        .map((e) => BggSearchResult.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Runs the three-case GameUPC integration test. Returns the raw result list.
+  Future<({String environment, List<Map<String, dynamic>> results})>
+      testGameUpc() async {
+    final resp = await http
+        .post(_uri('/gameupc/test'), headers: _headers)
+        .timeout(const Duration(seconds: 30));
+    final body = await _checkResponse(resp);
+    return (
+      environment: body['environment'] as String,
+      results: (body['results'] as List<dynamic>)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList(),
+    );
   }
 
   // ── Game Lists ──────────────────────────────────────────────────────────────
@@ -226,5 +330,44 @@ class ApiService {
     await http
         .delete(_uri('/lists/$listId/entries/$entryId'), headers: _headers)
         .timeout(const Duration(seconds: 10));
+  }
+}
+
+/// A BGG game search result returned by [ApiService.searchBgg].
+class BggSearchResult {
+  final int bggId;
+  final String title;
+  final int? yearPublished;
+  final int? minPlayers;
+  final int? maxPlayers;
+  final int? playingTime;
+  final String thumbnailUrl;
+  final String imageUrl;
+  final bool alreadyOwned;
+
+  const BggSearchResult({
+    required this.bggId,
+    required this.title,
+    this.yearPublished,
+    this.minPlayers,
+    this.maxPlayers,
+    this.playingTime,
+    required this.thumbnailUrl,
+    required this.imageUrl,
+    required this.alreadyOwned,
+  });
+
+  factory BggSearchResult.fromJson(Map<String, dynamic> json) {
+    return BggSearchResult(
+      bggId: json['bgg_id'] as int,
+      title: json['title'] as String,
+      yearPublished: json['year_published'] as int?,
+      minPlayers: json['min_players'] as int?,
+      maxPlayers: json['max_players'] as int?,
+      playingTime: json['playing_time'] as int?,
+      thumbnailUrl: json['thumbnail_url'] as String? ?? '',
+      imageUrl: json['image_url'] as String? ?? '',
+      alreadyOwned: json['already_owned'] as bool? ?? false,
+    );
   }
 }

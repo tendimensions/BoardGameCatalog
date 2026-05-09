@@ -10,11 +10,16 @@ Authentication: x-api-key header.
   - Production key: email gameupc@grettir.org to request access.
 
 Used exclusively by the mobile app barcode scan flow (REQ-CM-020 through REQ-CM-024).
+
+Three response scenarios from the API:
+  Case 1 — bgg_info_status: "verified", single entry  → GameUPCResult (auto-resolvable)
+  Case 2 — bgg_info_status: "choose_from_bgg_info_or_search", 2+ entries → GameUPCCandidates
+  Case 3 — new: true, bgg_info empty → raises GameNotFound
 """
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 import requests
 from django.conf import settings
@@ -39,16 +44,30 @@ def _api_key() -> str:
 
 
 @dataclass
-class GameUPCResult:
-    upc: str
-    title: str
+class GameUPCCandidate:
     bgg_id: Optional[int]
+    title: str
     year_published: Optional[int]
     min_players: Optional[int]
     max_players: Optional[int]
     playing_time: Optional[int]
     thumbnail_url: str
     image_url: str
+    confidence: float
+
+
+@dataclass
+class GameUPCResult:
+    """Case 1 — verified, single candidate, auto-resolvable."""
+    upc: str
+    candidate: GameUPCCandidate
+
+
+@dataclass
+class GameUPCCandidates:
+    """Case 2 — ambiguous, multiple candidates, user must choose."""
+    upc: str
+    candidates: list[GameUPCCandidate]
 
 
 class GameUPCError(Exception):
@@ -56,15 +75,16 @@ class GameUPCError(Exception):
 
 
 class GameNotFound(GameUPCError):
-    """Raised when no game is found for the given barcode."""
+    """Raised when no game is found for the given barcode (Case 3)."""
 
 
-def lookup_barcode(upc: str) -> GameUPCResult:
+def lookup_barcode(upc: str) -> Union[GameUPCResult, GameUPCCandidates]:
     """
     Look up a board game by UPC/barcode via GameUPC.com.
 
-    Returns a GameUPCResult on success.
-    Raises GameNotFound if the barcode is not in the database.
+    Returns GameUPCResult (Case 1 — verified, single match) or
+    GameUPCCandidates (Case 2 — ambiguous, multiple matches).
+    Raises GameNotFound for Case 3 (new barcode, no bgg_info).
     Raises GameUPCError on network or API errors.
     """
     url = f'{_base_url()}/upc/{upc}'
@@ -83,24 +103,19 @@ def lookup_barcode(upc: str) -> GameUPCResult:
 
     data = resp.json()
 
-    # "new: true" means the UPC is not in the database yet
+    # Case 3 — barcode is new to GameUPC
     if data.get('new') or not data.get('bgg_info'):
         raise GameNotFound(f'No game found for barcode {upc}')
 
-    # Take the highest-confidence result (first entry)
-    game = data['bgg_info'][0]
+    candidates = [_parse_candidate(g) for g in data['bgg_info']]
 
-    return GameUPCResult(
-        upc=upc,
-        title=game.get('name') or game.get('title') or 'Unknown',
-        bgg_id=_int_or_none(game.get('bgg_id') or game.get('id')),
-        year_published=_int_or_none(game.get('year_published') or game.get('year')),
-        min_players=_int_or_none(game.get('min_players')),
-        max_players=_int_or_none(game.get('max_players')),
-        playing_time=_int_or_none(game.get('playing_time')),
-        thumbnail_url=game.get('thumbnail') or game.get('thumbnail_url') or '',
-        image_url=game.get('image') or game.get('image_url') or '',
-    )
+    bgg_info_status = data.get('bgg_info_status', '')
+    if bgg_info_status == 'choose_from_bgg_info_or_search' or len(candidates) > 1:
+        # Case 2 — ambiguous, user must choose
+        return GameUPCCandidates(upc=upc, candidates=candidates)
+
+    # Case 1 — verified, single result
+    return GameUPCResult(upc=upc, candidate=candidates[0])
 
 
 def submit_barcode_mapping(upc: str, game_bgg_id: int, user_id: int) -> bool:
@@ -125,6 +140,20 @@ def submit_barcode_mapping(upc: str, game_bgg_id: int, user_id: int) -> bool:
     except requests.RequestException as exc:
         logger.warning('GameUPC submission error for UPC %s: %s', upc, exc)
         return False
+
+
+def _parse_candidate(game: dict) -> GameUPCCandidate:
+    return GameUPCCandidate(
+        bgg_id=_int_or_none(game.get('bgg_id') or game.get('id')),
+        title=game.get('name') or game.get('title') or 'Unknown',
+        year_published=_int_or_none(game.get('year_published') or game.get('year')),
+        min_players=_int_or_none(game.get('min_players')),
+        max_players=_int_or_none(game.get('max_players')),
+        playing_time=_int_or_none(game.get('playing_time')),
+        thumbnail_url=game.get('thumbnail') or game.get('thumbnail_url') or '',
+        image_url=game.get('image') or game.get('image_url') or '',
+        confidence=float(game.get('confidence') or 1.0),
+    )
 
 
 def _int_or_none(value) -> Optional[int]:

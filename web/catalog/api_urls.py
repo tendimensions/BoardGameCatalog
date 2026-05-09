@@ -5,11 +5,14 @@ from django.urls import path
 from .api_views import (
     APICollectionView,
     BarcodeScanView,
+    ConfirmScanView,
     DiscardBarcodeView,
     GameListDetailView,
     GameListEntriesView,
     GameListEntryDetailView,
     GameListsView,
+    GameSearchView,
+    GameUPCTestView,
     LinkBarcodeView,
     LoginView,
     UserProfileView,
@@ -24,9 +27,14 @@ urlpatterns = [
     path('collection',              APICollectionView.as_view(), name='api_collection'),
     # Barcode scan
     path('scan/barcode',            BarcodeScanView.as_view(),   name='api_scan_barcode'),
+    path('scan/confirm',            ConfirmScanView.as_view(),   name='api_scan_confirm'),
     # Unknown-barcode contribution (REQ-CM-040 through REQ-CM-049)
     path('scan/link',               LinkBarcodeView.as_view(),   name='api_scan_link'),
     path('scan/unlinked/<str:upc>', DiscardBarcodeView.as_view(), name='api_scan_discard'),
+    # BGG game search (for Case 3 "Search BGG" tab)
+    path('games/search',            GameSearchView.as_view(),    name='api_games_search'),
+    # GameUPC integration test (Settings page)
+    path('gameupc/test',            GameUPCTestView.as_view(),   name='api_gameupc_test'),
     # Game Lists (REQ-GL-001 through REQ-GL-041)
     path('lists',                               GameListsView.as_view(),            name='api_lists'),
     path('lists/<int:list_id>',                 GameListDetailView.as_view(),       name='api_list_detail'),
