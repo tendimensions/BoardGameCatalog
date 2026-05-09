@@ -99,3 +99,10 @@ All major technology choices are documented in [docs/adr/](docs/adr/). Read thes
 ### Requirements
 
 Full functional requirements (90+ items), database schema, and API specs are in [REQUIREMENTS-AND-DESIGN.md](REQUIREMENTS-AND-DESIGN.md). Consult it before implementing any feature.
+
+## Working Agreements
+
+- Create feature and bugfix branches from `main` for implementation work.
+- Push the working branch after the code has been updated.
+- Create a pull request for review when the work is finished.
+- Always run the relevant unit tests before finishing work to confirm nothing broke.
