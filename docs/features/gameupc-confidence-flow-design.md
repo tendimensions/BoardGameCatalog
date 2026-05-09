@@ -322,11 +322,11 @@ A modal bottom sheet slides up showing the candidates.
 ```
 
 - Candidates listed in confidence-descending order.
-- Confidence shown as a percentage bar or label.
-- "None of these" dismisses the sheet; no game is added; no post-back.
-- Selecting a candidate triggers a **confirmation dialog** (see 4.4).
+- Confidence shown as a percentage (e.g. `72%`).
+- "None of these" triggers a **discard confirmation dialog** before closing (see 4.4b).
+- Selecting a candidate triggers a **game confirmation dialog** (see 4.4a).
 
-### 4.4  Confirmation dialog for Case 2
+### 4.4a  Game confirmation dialog (Case 2 — candidate selected)
 
 Same deliberate confirmation pattern as Case 3 linking:
 
@@ -351,7 +351,25 @@ Same deliberate confirmation pattern as Case 3 linking:
 ```
 
 On confirm: `POST /api/v1/scan/confirm` with UPC + chosen bgg_id.  
-On cancel: return to candidate sheet.
+On cancel: return to candidate sheet (no discard — user can try another candidate).
+
+### 4.4b  Discard confirmation dialog (Case 2 — "None of these")
+
+```
+┌──────────────────────────────────────────┐
+│  Discard this scan?                      │
+│                                          │
+│  The barcode will not be saved and no    │
+│  game will be added to your collection.  │
+│                                          │
+│     [ Keep looking ]    [ Discard ]      │
+└──────────────────────────────────────────┘
+```
+
+- **Keep looking:** returns to the candidate sheet.
+- **Discard:** calls `DELETE /api/v1/scan/unlinked/{upc}` (no-op for Case 2 since no
+  `UnlinkedBarcode` is saved, but consistent API surface), removes from scan history,
+  updates history card to `notFound` with amber dot.
 
 ### 4.5  Tapping an `awaitingLink` history card → `LinkBarcodeScreen` (extended)
 
@@ -389,10 +407,15 @@ games not yet in the collection.
 **"Search BGG" tab behaviour:**
 - User types a game name.
 - After 500 ms debounce, calls `GET /api/v1/games/search?q=<name>`.
-- Results show thumbnail, title, year.
-- Selecting a result shows the same **confirmation dialog** as Case 2.
+- Results show all BGG matches — thumbnail, title, year.  Games already in the user's
+  collection are labelled **"Already owned"** inline so the user can spot duplicates,
+  but they are not hidden (a re-scan is a valid reason to see them).
+- Selecting a result shows the same **game confirmation dialog** as Case 2 (4.4a).
 - On confirm: `POST /api/v1/scan/link` with `upc` + `bgg_id` (new path in Section 3.4).
-- Game is created, added to collection, UPC stamped, posted to GameUPC.
+- Game is created (if new), added to collection, UPC stamped, posted to GameUPC.
+- Closing the screen without confirming a game triggers the **discard confirmation
+  dialog** (same pattern as 4.4b) — if the user confirms discard, the `UnlinkedBarcode`
+  record is deleted; if they choose "Keep looking", the screen stays open.
 
 ---
 
@@ -442,9 +465,19 @@ The section is always visible (test or production environment).
 └─────────────────────────────────────────┘
 ```
 
-A single **"Run Integration Tests"** button fires all three at once (one call to
-`POST /api/v1/gameupc/test`).  The results panel replaces itself with pass/fail for
-each case.
+A single **"Run Integration Tests"** button fires all three test UPCs at once via one
+call to `POST /api/v1/gameupc/test`.  The results panel replaces itself with pass/fail
+for each case.
+
+After the button is pressed it **disables for 30 seconds** (client-side only, no
+server-side rate limit).  A countdown label shows the remaining seconds.  This
+prevents rapid repeated presses without adding server complexity.
+
+```
+┌────────────────────────────────────┐
+│  [ Run Integration Tests — 24s ]   │  ← disabled with countdown
+└────────────────────────────────────┘
+```
 
 **Pass criteria:**
 - Case 1: `status == "ok"` and `candidate_count == 1`
@@ -458,11 +491,11 @@ returns unexpected data.
 
 - `POST /api/v1/gameupc/test` runs on the server so the API key is never exposed to
   the mobile app.
-- The endpoint calls `lookup_barcode()` for each test UPC and returns the structured
-  summary above.
-- No games are added to any collection; no UPCs are submitted to GameUPC.
-- The endpoint is rate-limited to one call per minute per user to avoid hammering the
-  test environment.
+- The endpoint makes exactly three `lookup_barcode()` calls (one per test UPC) and
+  returns the structured summary.  No games are added to any collection; no UPCs are
+  submitted to GameUPC.
+- No server-side rate limiting — the 30-second client cooldown is sufficient given
+  that only three API calls are made per press.
 
 ---
 
@@ -491,24 +524,12 @@ Given the dependencies between pieces, the recommended build order is:
 
 ---
 
-## 8. Open Questions
+## 8. Design Decisions (Resolved)
 
-1. **Case 2 — no game added on dismiss:** If the user sees candidates but taps "None
-   of these", should the scan still record anything?  Current proposal: no game added,
-   no post-back, scan history shows "Not identified" with amber dot.  Confirm?
-
-2. **Case 3 — retain `UnlinkedBarcode` after BGG search:**  If the user finds the game
-   via BGG search and confirms, the `UnlinkedBarcode` is deleted.  If they dismiss the
-   BGG search without selecting, should the `UnlinkedBarcode` stay alive so they can
-   come back to it?  Current proposal: yes, retain it — consistent with REQ-CM-048.
-
-3. **Confidence display format:**  Show as percentage (`72%`) or bar?  A text
-   percentage is simpler to implement and clear enough for this use case.  Confirm?
-
-4. **BGG name search scope:**  Should the search only return games not already in the
-   user's collection, or all BGG results?  Proposal: all BGG results, but flag
-   "Already owned" inline.  This avoids hiding valid matches.
-
-5. **`POST /api/v1/gameupc/test` auth:**  The test endpoint requires an API key (all
-   `/api/v1/` endpoints do).  This is appropriate — only logged-in users should be
-   able to trigger it.  Confirm rate-limit of 1 per minute per user?
+| # | Question | Decision |
+|---|----------|----------|
+| 1 | Case 2 — "None of these" | Discard the barcode, but show a confirmation dialog first. "Keep looking" returns to candidate sheet; "Discard" removes from history. |
+| 2 | Case 3 — BGG search dismissed without selection | Discard with confirmation dialog. `UnlinkedBarcode` deleted on confirmed discard; screen stays open if user chooses "Keep looking". |
+| 3 | Confidence display format | Percentage text (`72%`) for clarity. |
+| 4 | BGG name search scope | All BGG results. Games already in collection labelled **"Already owned"** inline — not hidden. |
+| 5 | Settings test button throttle | 30-second client-side cooldown after each press (countdown label on button). No server-side rate limit. |
