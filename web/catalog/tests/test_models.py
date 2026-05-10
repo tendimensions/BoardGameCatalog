@@ -10,6 +10,11 @@ from catalog.models import (
     Game,
     GameList,
     GameListEntry,
+    GameRequest,
+    LendingHistory,
+    PartyList,
+    PartyListGame,
+    PartyListShare,
     UnlinkedBarcode,
     UserCollection,
 )
@@ -194,3 +199,127 @@ class GameListEntryTests(TestCase):
     def test_via_constants_defined(self):
         self.assertEqual(GameListEntry.VIA_MANUAL, 'manual')
         self.assertEqual(GameListEntry.VIA_BARCODE, 'barcode')
+
+
+# ── PartyList model ───────────────────────────────────────────────────────────
+
+class PartyListTests(TestCase):
+    def setUp(self):
+        self.user = _make_user()
+
+    def test_str(self):
+        party_list = PartyList.objects.create(owner=self.user, name='Game Night')
+        self.assertEqual(str(party_list), 'Game Night (testuser)')
+
+    def test_description_blank_by_default(self):
+        party_list = PartyList.objects.create(owner=self.user, name='Game Night')
+        self.assertEqual(party_list.description, '')
+
+    def test_event_date_optional(self):
+        party_list = PartyList.objects.create(owner=self.user, name='Game Night')
+        self.assertIsNone(party_list.event_date)
+
+
+class PartyListGameTests(TestCase):
+    def setUp(self):
+        self.user = _make_user()
+        self.game = _make_game()
+        self.party_list = PartyList.objects.create(owner=self.user, name='Weekend')
+
+    def test_unique_together_party_list_game(self):
+        PartyListGame.objects.create(party_list=self.party_list, game=self.game)
+        with self.assertRaises(IntegrityError):
+            PartyListGame.objects.create(party_list=self.party_list, game=self.game)
+
+    def test_same_game_in_different_party_lists_allowed(self):
+        other_party_list = PartyList.objects.create(owner=self.user, name='Holiday')
+        PartyListGame.objects.create(party_list=self.party_list, game=self.game)
+        PartyListGame.objects.create(party_list=other_party_list, game=self.game)
+
+
+class PartyListShareTests(TestCase):
+    def setUp(self):
+        self.owner = _make_user()
+        self.shared_with = _make_user(username='shared', email='shared@example.com')
+        self.party_list = PartyList.objects.create(owner=self.owner, name='Shared List')
+
+    def test_default_permission_is_view(self):
+        share = PartyListShare.objects.create(
+            party_list=self.party_list,
+            shared_with_user=self.shared_with,
+        )
+        self.assertEqual(share.permission, PartyListShare.PERMISSION_VIEW)
+
+    def test_default_accepted_is_false(self):
+        share = PartyListShare.objects.create(
+            party_list=self.party_list,
+            shared_with_user=self.shared_with,
+        )
+        self.assertFalse(share.accepted)
+
+    def test_unique_together_party_list_shared_with_user(self):
+        PartyListShare.objects.create(
+            party_list=self.party_list,
+            shared_with_user=self.shared_with,
+        )
+        with self.assertRaises(IntegrityError):
+            PartyListShare.objects.create(
+                party_list=self.party_list,
+                shared_with_user=self.shared_with,
+            )
+
+
+class GameRequestTests(TestCase):
+    def setUp(self):
+        self.owner = _make_user()
+        self.requester = _make_user(username='requester', email='requester@example.com')
+        self.game = _make_game()
+        self.party_list = PartyList.objects.create(owner=self.owner, name='Borrow List')
+
+    def test_default_status_is_pending(self):
+        request = GameRequest.objects.create(
+            party_list=self.party_list,
+            requester=self.requester,
+            owner=self.owner,
+            game=self.game,
+        )
+        self.assertEqual(request.status, GameRequest.STATUS_PENDING)
+
+    def test_message_blank_by_default(self):
+        request = GameRequest.objects.create(
+            party_list=self.party_list,
+            requester=self.requester,
+            owner=self.owner,
+            game=self.game,
+        )
+        self.assertEqual(request.message, '')
+
+    def test_status_constants_defined(self):
+        self.assertEqual(GameRequest.STATUS_PENDING, 'pending')
+        self.assertEqual(GameRequest.STATUS_ACCEPTED, 'accepted')
+        self.assertEqual(GameRequest.STATUS_DECLINED, 'declined')
+
+
+class LendingHistoryTests(TestCase):
+    def setUp(self):
+        self.user = _make_user()
+        self.game = _make_game()
+
+    def test_returned_date_optional(self):
+        history = LendingHistory.objects.create(
+            user=self.user,
+            game=self.game,
+            lent_to='Alice',
+            lent_date='2026-05-09',
+        )
+        self.assertIsNone(history.returned_date)
+
+    def test_notes_blank_by_default(self):
+        history = LendingHistory.objects.create(
+            user=self.user,
+            game=self.game,
+            lent_to='Alice',
+            lent_date='2026-05-09',
+        )
+        self.assertEqual(history.lent_notes, '')
+        self.assertEqual(history.return_notes, '')

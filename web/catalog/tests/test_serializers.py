@@ -24,6 +24,8 @@ def _make_game(**kwargs):
         'min_players': 3,
         'max_players': 4,
         'playing_time': 90,
+        'min_age': 10,
+        'description': 'Trade and build on the island of Catan.',
         'thumbnail_url': 'https://example.com/thumb.jpg',
         'image_url': 'https://example.com/image.jpg',
     }
@@ -45,7 +47,8 @@ class GameSerializerTests(TestCase):
         data = GameSerializer(self.game).data
         expected = {
             'id', 'bgg_id', 'upc', 'title', 'year_published',
-            'min_players', 'max_players', 'playing_time',
+            'min_players', 'max_players', 'playing_time', 'min_age',
+            'description',
             'thumbnail_url', 'image_url', 'players_display', 'play_time_display',
         }
         self.assertEqual(set(data.keys()), expected)
@@ -63,6 +66,10 @@ class GameSerializerTests(TestCase):
     def test_title_serialized(self):
         data = GameSerializer(self.game).data
         self.assertEqual(data['title'], 'Catan')
+
+    def test_description_serialized(self):
+        data = GameSerializer(self.game).data
+        self.assertEqual(data['description'], 'Trade and build on the island of Catan.')
 
     def test_null_year_serialized(self):
         game = _make_game(title='Timeless', bgg_id=999, year_published=None)

@@ -4,33 +4,38 @@ import 'package:boardgamecatalog/models/collection_item.dart';
 import 'package:boardgamecatalog/models/game.dart';
 
 Map<String, dynamic> _gameJson({int id = 1, String title = 'Catan'}) => {
-      'id': id,
-      'bgg_id': 13,
-      'upc': '012345678901',
-      'title': title,
-      'year_published': 1995,
-      'min_players': 3,
-      'max_players': 4,
-      'playing_time': 90,
-      'thumbnail_url': 'https://example.com/thumb.jpg',
-      'image_url': 'https://example.com/image.jpg',
-      'players_display': '3–4',
-      'play_time_display': '90 min',
-    };
+  'id': id,
+  'bgg_id': 13,
+  'upc': '012345678901',
+  'title': title,
+  'year_published': 1995,
+  'min_players': 3,
+  'max_players': 4,
+  'playing_time': 90,
+  'thumbnail_url': 'https://example.com/thumb.jpg',
+  'image_url': 'https://example.com/image.jpg',
+  'players_display': '3–4',
+  'play_time_display': '90 min',
+};
 
 Map<String, dynamic> _itemJson({
   int id = 10,
   String source = 'bgg_sync',
+  String? acquisitionDate,
+  String notes = '',
   bool isLent = false,
   String lentTo = '',
-}) =>
-    {
-      'id': id,
-      'game': _gameJson(),
-      'source': source,
-      'is_lent': isLent,
-      'lent_to': lentTo,
-    };
+  String? lentDate,
+}) => {
+  'id': id,
+  'game': _gameJson(),
+  'source': source,
+  'acquisition_date': acquisitionDate,
+  'notes': notes,
+  'is_lent': isLent,
+  'lent_to': lentTo,
+  'lent_date': lentDate,
+};
 
 void main() {
   group('CollectionItem.fromJson', () {
@@ -46,13 +51,23 @@ void main() {
       expect(item.game.title, 'Catan');
     });
 
+    test('parses acquisition date and notes', () {
+      final item = CollectionItem.fromJson(
+        _itemJson(acquisitionDate: '2026-05-09', notes: 'Great with 4 players'),
+      );
+      expect(item.acquisitionDate, '2026-05-09');
+      expect(item.notes, 'Great with 4 players');
+    });
+
     test('is_lent false by default', () {
       final item = CollectionItem.fromJson(_itemJson());
       expect(item.isLent, isFalse);
     });
 
     test('is_lent true is reflected', () {
-      final item = CollectionItem.fromJson(_itemJson(isLent: true, lentTo: 'Alice'));
+      final item = CollectionItem.fromJson(
+        _itemJson(isLent: true, lentTo: 'Alice'),
+      );
       expect(item.isLent, isTrue);
       expect(item.lentTo, 'Alice');
     });
@@ -76,6 +91,50 @@ void main() {
       json.remove('source');
       final item = CollectionItem.fromJson(json);
       expect(item.source, '');
+    });
+
+    test('missing notes defaults to empty string', () {
+      final json = _itemJson();
+      json.remove('notes');
+      final item = CollectionItem.fromJson(json);
+      expect(item.notes, '');
+    });
+  });
+
+  group('CollectionItem.copyWith', () {
+    final original = CollectionItem(
+      id: 10,
+      game: Game.fromJson(_gameJson()),
+      source: 'manual',
+      acquisitionDate: '2026-05-09',
+      notes: 'Original note',
+      isLent: false,
+      lentTo: '',
+      lentDate: null,
+    );
+
+    test('updates selected fields and preserves the rest', () {
+      final updated = original.copyWith(
+        source: 'barcode',
+        notes: 'Updated note',
+        isLent: true,
+        lentTo: 'Alice',
+        lentDate: '2026-05-10',
+      );
+
+      expect(updated.source, 'barcode');
+      expect(updated.notes, 'Updated note');
+      expect(updated.isLent, isTrue);
+      expect(updated.lentTo, 'Alice');
+      expect(updated.lentDate, '2026-05-10');
+      expect(updated.id, original.id);
+      expect(updated.game.title, original.game.title);
+      expect(updated.acquisitionDate, original.acquisitionDate);
+    });
+
+    test('returns a new instance', () {
+      final updated = original.copyWith(notes: 'Changed');
+      expect(identical(updated, original), isFalse);
     });
   });
 }

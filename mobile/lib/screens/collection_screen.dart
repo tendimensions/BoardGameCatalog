@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/collection_item.dart';
 import '../providers/auth_provider.dart';
 import '../providers/collection_provider.dart';
+import 'game_detail_screen.dart';
 
 class CollectionScreen extends StatefulWidget {
   const CollectionScreen({super.key});
@@ -53,12 +54,16 @@ class _CollectionScreenState extends State<CollectionScreen> {
                 decoration: InputDecoration(
                   hintText: 'Search games…',
                   hintStyle: const TextStyle(color: Color(0xFF555555)),
-                  prefixIcon:
-                      const Icon(Icons.search, color: Color(0xFF555555)),
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    color: Color(0xFF555555),
+                  ),
                   suffixIcon: _searchController.text.isNotEmpty
                       ? IconButton(
-                          icon: const Icon(Icons.clear,
-                              color: Color(0xFF555555)),
+                          icon: const Icon(
+                            Icons.clear,
+                            color: Color(0xFF555555),
+                          ),
                           onPressed: () {
                             _searchController.clear();
                             col.setQuery('');
@@ -77,8 +82,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide:
-                        const BorderSide(color: Color(0xFF7eb8f7)),
+                    borderSide: const BorderSide(color: Color(0xFF7eb8f7)),
                   ),
                   contentPadding: const EdgeInsets.symmetric(vertical: 10),
                 ),
@@ -89,33 +93,39 @@ class _CollectionScreenState extends State<CollectionScreen> {
             if (col.loadState == LoadState.error && col.error != null)
               Container(
                 width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 6,
+                ),
                 color: const Color(0xFF2a1a00),
                 child: Text(
                   col.error!,
                   style: const TextStyle(
-                      color: Color(0xFFffb74d), fontSize: 12),
+                    color: Color(0xFFffb74d),
+                    fontSize: 12,
+                  ),
                 ),
               )
             else if (col.loadState == LoadState.loaded)
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
                     '${col.items.length} game${col.items.length == 1 ? '' : 's'}',
                     style: const TextStyle(
-                        color: Color(0xFF666666), fontSize: 12),
+                      color: Color(0xFF666666),
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ),
 
             // ── Game list ────────────────────────────────────────────────
-            Expanded(
-              child: _buildBody(col),
-            ),
+            Expanded(child: _buildBody(col)),
           ],
         ),
       ),
@@ -134,15 +144,17 @@ class _CollectionScreenState extends State<CollectionScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.casino_outlined,
-                size: 64, color: Color(0xFF333333)),
+            const Icon(
+              Icons.casino_outlined,
+              size: 64,
+              color: Color(0xFF333333),
+            ),
             const SizedBox(height: 16),
             Text(
               col.loadState == LoadState.error
                   ? 'Could not load collection'
                   : 'No games found',
-              style:
-                  const TextStyle(color: Color(0xFF666666), fontSize: 16),
+              style: const TextStyle(color: Color(0xFF666666), fontSize: 16),
             ),
             if (col.loadState != LoadState.error) ...[
               const SizedBox(height: 8),
@@ -174,7 +186,8 @@ class _CollectionScreenState extends State<CollectionScreen> {
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         itemCount: col.items.length,
-        itemBuilder: (_, i) => _GameTile(item: col.items[i]),
+        itemBuilder: (_, i) =>
+            _GameTile(item: col.items[i], onRefreshCollection: _load),
       ),
     );
   }
@@ -182,7 +195,9 @@ class _CollectionScreenState extends State<CollectionScreen> {
 
 class _GameTile extends StatelessWidget {
   final CollectionItem item;
-  const _GameTile({required this.item});
+  final Future<void> Function() onRefreshCollection;
+
+  const _GameTile({required this.item, required this.onRefreshCollection});
 
   @override
   Widget build(BuildContext context) {
@@ -195,8 +210,18 @@ class _GameTile extends StatelessWidget {
         border: Border.all(color: const Color(0xFF2a2a2a)),
       ),
       child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => GameDetailScreen(
+                item: item,
+                onRefreshCollection: onRefreshCollection,
+              ),
+            ),
+          );
+        },
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(4),
           child: game.thumbnailUrl.isNotEmpty
@@ -212,9 +237,10 @@ class _GameTile extends StatelessWidget {
         title: Text(
           game.title,
           style: const TextStyle(
-              color: Color(0xFFdddddd),
-              fontSize: 14,
-              fontWeight: FontWeight.w500),
+            color: Color(0xFFdddddd),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -224,8 +250,7 @@ class _GameTile extends StatelessWidget {
             game.playersDisplay,
             game.playTimeDisplay,
           ].join(' · '),
-          style:
-              const TextStyle(color: Color(0xFF888888), fontSize: 12),
+          style: const TextStyle(color: Color(0xFF888888), fontSize: 12),
         ),
         trailing: game.upc.isEmpty
             ? const Tooltip(
@@ -247,8 +272,11 @@ class _Thumb extends StatelessWidget {
       width: 48,
       height: 48,
       color: const Color(0xFF2a2a2a),
-      child: const Icon(Icons.casino_outlined,
-          size: 24, color: Color(0xFF444444)),
+      child: const Icon(
+        Icons.casino_outlined,
+        size: 24,
+        color: Color(0xFF444444),
+      ),
     );
   }
 }

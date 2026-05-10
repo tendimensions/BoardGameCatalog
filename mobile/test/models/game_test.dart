@@ -15,6 +15,8 @@ void main() {
       'min_players': 3,
       'max_players': 4,
       'playing_time': 90,
+      'min_age': 10,
+      'description': 'Trade and build on the island of Catan.',
       'thumbnail_url': 'https://example.com/thumb.jpg',
       'image_url': 'https://example.com/image.jpg',
       'players_display': '3–4',
@@ -31,6 +33,8 @@ void main() {
       expect(game.minPlayers, 3);
       expect(game.maxPlayers, 4);
       expect(game.playingTime, 90);
+      expect(game.minAge, 10);
+      expect(game.description, 'Trade and build on the island of Catan.');
       expect(game.thumbnailUrl, 'https://example.com/thumb.jpg');
       expect(game.imageUrl, 'https://example.com/image.jpg');
       expect(game.playersDisplay, '3–4');
@@ -108,6 +112,8 @@ void main() {
       minPlayers: 1,
       maxPlayers: 4,
       playingTime: 120,
+      minAge: 14,
+      description: 'A campaign-driven dungeon crawler.',
       thumbnailUrl: 'https://example.com/t.jpg',
       imageUrl: 'https://example.com/i.jpg',
       playersDisplay: '1–4',
@@ -124,6 +130,8 @@ void main() {
       expect(json['min_players'], 1);
       expect(json['max_players'], 4);
       expect(json['playing_time'], 120);
+      expect(json['min_age'], 14);
+      expect(json['description'], 'A campaign-driven dungeon crawler.');
       expect(json['thumbnail_url'], 'https://example.com/t.jpg');
       expect(json['image_url'], 'https://example.com/i.jpg');
       expect(json['players_display'], '1–4');
@@ -136,6 +144,7 @@ void main() {
         bggId: null,
         upc: '',
         title: 'Unnamed',
+        description: '',
         thumbnailUrl: '',
         imageUrl: '',
         playersDisplay: '—',
@@ -150,6 +159,45 @@ void main() {
       expect(restored.id, game.id);
       expect(restored.title, game.title);
       expect(restored.bggId, game.bggId);
+    });
+  });
+
+  group('Game.copyWith', () {
+    const original = Game(
+      id: 9,
+      bggId: 120,
+      upc: '111222333444',
+      title: 'Original',
+      yearPublished: 2001,
+      minPlayers: 2,
+      maxPlayers: 5,
+      playingTime: 60,
+      minAge: 12,
+      description: 'Original description',
+      thumbnailUrl: 'https://example.com/original-thumb.jpg',
+      imageUrl: 'https://example.com/original-image.jpg',
+      playersDisplay: '2–5',
+      playTimeDisplay: '60 min',
+    );
+
+    test('returns updated fields and preserves the rest', () {
+      final updated = original.copyWith(
+        title: 'Updated',
+        upc: '999888777666',
+        minAge: 14,
+      );
+
+      expect(updated.title, 'Updated');
+      expect(updated.upc, '999888777666');
+      expect(updated.minAge, 14);
+      expect(updated.id, original.id);
+      expect(updated.bggId, original.bggId);
+      expect(updated.description, original.description);
+    });
+
+    test('returns a new instance', () {
+      final updated = original.copyWith(title: 'Updated');
+      expect(identical(updated, original), isFalse);
     });
   });
 }

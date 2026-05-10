@@ -1,13 +1,23 @@
 # Mobile App Changelog
 
 ## Firebase Release Notes
-- Reordered the bottom navigation to Collection, Lists, Scan, Settings.
-- Replaced the first-run setup screen icon with the app icon.
-- Added CodeMagic release-note generation from this changelog section.
+- Added a dedicated game detail screen when tapping items in the Collection tab.
+- Added direct barcode linking from the game detail screen for games without a UPC.
+- Exposed richer game metadata and collection details on mobile.
 
 ---
 
 All notable changes to the Board Game Catalog Flutter app.
+
+## [1.1.0] — 2026-05-09
+
+### Added
+- Game detail screen accessible from tapped collection items
+- Direct barcode scan-and-link flow for collection games that do not yet have a UPC
+
+### Changed
+- Expanded mobile game metadata to include minimum age and description
+- Expanded collection detail display with source, notes, acquisition date, and lending status
 
 ## [1.0.1] — 2026-05-09
 

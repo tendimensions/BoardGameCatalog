@@ -11,7 +11,8 @@ class GameSerializer(serializers.ModelSerializer):
         model = Game
         fields = [
             'id', 'bgg_id', 'upc', 'title', 'year_published',
-            'min_players', 'max_players', 'playing_time',
+            'min_players', 'max_players', 'playing_time', 'min_age',
+            'description',
             'thumbnail_url', 'image_url',
             'players_display', 'play_time_display',
         ]
