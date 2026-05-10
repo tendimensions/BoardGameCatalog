@@ -15,6 +15,8 @@ void main() {
       'min_players': 3,
       'max_players': 4,
       'playing_time': 90,
+      'min_age': 10,
+      'description': 'Trade and build on the island of Catan.',
       'thumbnail_url': 'https://example.com/thumb.jpg',
       'image_url': 'https://example.com/image.jpg',
       'players_display': '3–4',
@@ -31,6 +33,8 @@ void main() {
       expect(game.minPlayers, 3);
       expect(game.maxPlayers, 4);
       expect(game.playingTime, 90);
+      expect(game.minAge, 10);
+      expect(game.description, 'Trade and build on the island of Catan.');
       expect(game.thumbnailUrl, 'https://example.com/thumb.jpg');
       expect(game.imageUrl, 'https://example.com/image.jpg');
       expect(game.playersDisplay, '3–4');
@@ -108,6 +112,8 @@ void main() {
       minPlayers: 1,
       maxPlayers: 4,
       playingTime: 120,
+      minAge: 14,
+      description: 'A campaign-driven dungeon crawler.',
       thumbnailUrl: 'https://example.com/t.jpg',
       imageUrl: 'https://example.com/i.jpg',
       playersDisplay: '1–4',
@@ -124,6 +130,8 @@ void main() {
       expect(json['min_players'], 1);
       expect(json['max_players'], 4);
       expect(json['playing_time'], 120);
+      expect(json['min_age'], 14);
+      expect(json['description'], 'A campaign-driven dungeon crawler.');
       expect(json['thumbnail_url'], 'https://example.com/t.jpg');
       expect(json['image_url'], 'https://example.com/i.jpg');
       expect(json['players_display'], '1–4');
@@ -136,6 +144,7 @@ void main() {
         bggId: null,
         upc: '',
         title: 'Unnamed',
+        description: '',
         thumbnailUrl: '',
         imageUrl: '',
         playersDisplay: '—',

@@ -46,15 +46,14 @@ class ApiService {
   ApiService(this.apiKey);
 
   Map<String, String> get _headers => {
-        'Authorization': 'Bearer $apiKey',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      };
+    'Authorization': 'Bearer $apiKey',
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  };
 
-  Uri _uri(String path, [Map<String, String>? queryParams]) =>
-      Uri.parse('${AppConstants.apiBaseUrl}$path').replace(
-        queryParameters: queryParams,
-      );
+  Uri _uri(String path, [Map<String, String>? queryParams]) => Uri.parse(
+    '${AppConstants.apiBaseUrl}$path',
+  ).replace(queryParameters: queryParams);
 
   Future<Map<String, dynamic>> _checkResponse(http.Response resp) {
     if (resp.statusCode == 401 || resp.statusCode == 403) {
@@ -62,7 +61,8 @@ class ApiService {
     }
     final body = jsonDecode(resp.body) as Map<String, dynamic>;
     if (resp.statusCode >= 400) {
-      final msg = body['error'] as String? ?? 'Unexpected error (${resp.statusCode})';
+      final msg =
+          body['error'] as String? ?? 'Unexpected error (${resp.statusCode})';
       throw ApiException(resp.statusCode, msg);
     }
     return Future.value(body);
@@ -101,6 +101,26 @@ class ApiService {
     return list
         .map((e) => CollectionItem.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Directly links a scanned barcode to an existing collection game chosen
+  /// by the user from the detail screen.
+  Future<({Game game, bool submittedToGameUpc})> assignBarcodeToGame(
+    int gameId,
+    String upc,
+  ) async {
+    final resp = await http
+        .post(
+          _uri('/games/$gameId/barcode'),
+          headers: _headers,
+          body: jsonEncode({'upc': upc}),
+        )
+        .timeout(const Duration(seconds: 20));
+    final body = await _checkResponse(resp);
+    return (
+      game: Game.fromJson(body['game'] as Map<String, dynamic>),
+      submittedToGameUpc: body['submitted_to_gameupc'] as bool? ?? false,
+    );
   }
 
   /// Submits a barcode scan. Returns a [ScanBarcodeResponse].
@@ -153,7 +173,7 @@ class ApiService {
   /// Confirms a candidate selection for Case 2 (ambiguous barcode).
   /// Returns the resolved [Game] and whether the mapping was submitted to GameUPC.
   Future<({Game game, bool addedToCollection, bool submittedToGameUpc})>
-      confirmScan(String upc, int bggId) async {
+  confirmScan(String upc, int bggId) async {
     final resp = await http
         .post(
           _uri('/scan/confirm'),
@@ -175,7 +195,10 @@ class ApiService {
   /// Supply [bggId] to link via a BGG search result (Case 3, "Search BGG" tab).
   /// Exactly one of the two must be non-null.
   Future<({Game game, bool submittedToGameUpc})> linkBarcode(
-      String upc, {int? gameId, int? bggId}) async {
+    String upc, {
+    int? gameId,
+    int? bggId,
+  }) async {
     assert(
       (gameId == null) != (bggId == null),
       'Exactly one of gameId or bggId must be provided',
@@ -185,11 +208,7 @@ class ApiService {
     if (bggId != null) payload['bgg_id'] = bggId;
 
     final resp = await http
-        .post(
-          _uri('/scan/link'),
-          headers: _headers,
-          body: jsonEncode(payload),
-        )
+        .post(_uri('/scan/link'), headers: _headers, body: jsonEncode(payload))
         .timeout(const Duration(seconds: 20));
     final body = await _checkResponse(resp);
     return (
@@ -221,7 +240,7 @@ class ApiService {
 
   /// Runs the three-case GameUPC integration test. Returns the raw result list.
   Future<({String environment, List<Map<String, dynamic>> results})>
-      testGameUpc() async {
+  testGameUpc() async {
     final resp = await http
         .post(_uri('/gameupc/test'), headers: _headers)
         .timeout(const Duration(seconds: 30));
@@ -246,7 +265,8 @@ class ApiService {
     }
     if (resp.statusCode >= 400) {
       final err = jsonDecode(resp.body) as Map<String, dynamic>;
-      final msg = err['error'] as String? ?? 'Unexpected error (${resp.statusCode})';
+      final msg =
+          err['error'] as String? ?? 'Unexpected error (${resp.statusCode})';
       throw ApiException(resp.statusCode, msg);
     }
     return (jsonDecode(resp.body) as List<dynamic>)
@@ -277,7 +297,11 @@ class ApiService {
   }
 
   /// Updates a list's name and/or description.
-  Future<GameList> updateList(int listId, {String? name, String? description}) async {
+  Future<GameList> updateList(
+    int listId, {
+    String? name,
+    String? description,
+  }) async {
     final payload = <String, dynamic>{};
     if (name != null) payload['name'] = name;
     if (description != null) payload['description'] = description;
@@ -300,7 +324,11 @@ class ApiService {
   }
 
   /// Adds a game to a list. Returns the new [GameListEntry].
-  Future<GameListEntry> addToList(int listId, int gameId, {String note = ''}) async {
+  Future<GameListEntry> addToList(
+    int listId,
+    int gameId, {
+    String note = '',
+  }) async {
     final resp = await http
         .post(
           _uri('/lists/$listId/entries'),
@@ -313,7 +341,11 @@ class ApiService {
   }
 
   /// Updates the note on a list entry.
-  Future<GameListEntry> updateEntryNote(int listId, int entryId, String note) async {
+  Future<GameListEntry> updateEntryNote(
+    int listId,
+    int entryId,
+    String note,
+  ) async {
     final resp = await http
         .patch(
           _uri('/lists/$listId/entries/$entryId'),

@@ -113,6 +113,72 @@ class UserProfileView(APIView):
         })
 
 
+class GameBarcodeAssignView(APIView):
+    """
+    POST /api/v1/games/<game_id>/barcode
+
+    Directly associates a scanned UPC with an existing collection game chosen
+    by the user from the detail screen.
+
+    Request:  { "upc": "012345678901" }
+    Response: { "game": {...}, "submitted_to_gameupc": bool }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, game_id):
+        upc = (request.data.get('upc') or '').strip()
+        if not upc:
+            return Response(
+                {'error': 'upc is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            collection_item = (
+                UserCollection.objects
+                .select_related('game')
+                .get(user=request.user, game_id=game_id)
+            )
+        except UserCollection.DoesNotExist:
+            return Response(
+                {'error': 'Game not found in your collection.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        game = collection_item.game
+
+        if game.upc:
+            return Response(
+                {'error': 'This game already has a barcode linked.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        conflicting_game = Game.objects.filter(upc=upc).exclude(id=game.id).first()
+        if conflicting_game is not None:
+            return Response(
+                {'error': f'This barcode is already linked to "{conflicting_game.title}".'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        game.upc = upc
+        game.save(update_fields=['upc', 'updated_at'])
+
+        submitted = False
+        if game.bgg_id:
+            submitted = gameupc_client.submit_barcode_mapping(upc, game.bgg_id, request.user.id)
+
+        logger.info(
+            'User %s directly linked barcode %s → game %s (BGG %s), submitted=%s',
+            request.user.username, upc, game.title, game.bgg_id, submitted,
+        )
+
+        return Response(
+            {'game': GameSerializer(game).data, 'submitted_to_gameupc': submitted},
+            status=status.HTTP_200_OK,
+        )
+
+
 # ── Collection ────────────────────────────────────────────────────────────────
 
 class APICollectionView(APIView):

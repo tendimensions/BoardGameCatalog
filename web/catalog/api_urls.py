@@ -7,6 +7,7 @@ from .api_views import (
     BarcodeScanView,
     ConfirmScanView,
     DiscardBarcodeView,
+    GameBarcodeAssignView,
     GameListDetailView,
     GameListEntriesView,
     GameListEntryDetailView,
@@ -25,6 +26,7 @@ urlpatterns = [
     path('users/profile',           UserProfileView.as_view(),   name='api_profile'),
     # Collection
     path('collection',              APICollectionView.as_view(), name='api_collection'),
+    path('games/<int:game_id>/barcode', GameBarcodeAssignView.as_view(), name='api_game_barcode_assign'),
     # Barcode scan
     path('scan/barcode',            BarcodeScanView.as_view(),   name='api_scan_barcode'),
     path('scan/confirm',            ConfirmScanView.as_view(),   name='api_scan_confirm'),

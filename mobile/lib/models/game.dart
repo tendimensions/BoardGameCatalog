@@ -7,6 +7,8 @@ class Game {
   final int? minPlayers;
   final int? maxPlayers;
   final int? playingTime;
+  final int? minAge;
+  final String description;
   final String thumbnailUrl;
   final String imageUrl;
   final String playersDisplay;
@@ -21,6 +23,8 @@ class Game {
     this.minPlayers,
     this.maxPlayers,
     this.playingTime,
+    this.minAge,
+    this.description = '',
     required this.thumbnailUrl,
     required this.imageUrl,
     required this.playersDisplay,
@@ -37,6 +41,8 @@ class Game {
       minPlayers: json['min_players'] as int?,
       maxPlayers: json['max_players'] as int?,
       playingTime: json['playing_time'] as int?,
+      minAge: json['min_age'] as int?,
+      description: json['description'] as String? ?? '',
       thumbnailUrl: json['thumbnail_url'] as String? ?? '',
       imageUrl: json['image_url'] as String? ?? '',
       playersDisplay: json['players_display'] as String? ?? '—',
@@ -44,18 +50,54 @@ class Game {
     );
   }
 
+  Game copyWith({
+    int? id,
+    int? bggId,
+    String? upc,
+    String? title,
+    int? yearPublished,
+    int? minPlayers,
+    int? maxPlayers,
+    int? playingTime,
+    int? minAge,
+    String? description,
+    String? thumbnailUrl,
+    String? imageUrl,
+    String? playersDisplay,
+    String? playTimeDisplay,
+  }) {
+    return Game(
+      id: id ?? this.id,
+      bggId: bggId ?? this.bggId,
+      upc: upc ?? this.upc,
+      title: title ?? this.title,
+      yearPublished: yearPublished ?? this.yearPublished,
+      minPlayers: minPlayers ?? this.minPlayers,
+      maxPlayers: maxPlayers ?? this.maxPlayers,
+      playingTime: playingTime ?? this.playingTime,
+      minAge: minAge ?? this.minAge,
+      description: description ?? this.description,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      imageUrl: imageUrl ?? this.imageUrl,
+      playersDisplay: playersDisplay ?? this.playersDisplay,
+      playTimeDisplay: playTimeDisplay ?? this.playTimeDisplay,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'bgg_id': bggId,
-        'upc': upc,
-        'title': title,
-        'year_published': yearPublished,
-        'min_players': minPlayers,
-        'max_players': maxPlayers,
-        'playing_time': playingTime,
-        'thumbnail_url': thumbnailUrl,
-        'image_url': imageUrl,
-        'players_display': playersDisplay,
-        'play_time_display': playTimeDisplay,
-      };
+    'id': id,
+    'bgg_id': bggId,
+    'upc': upc,
+    'title': title,
+    'year_published': yearPublished,
+    'min_players': minPlayers,
+    'max_players': maxPlayers,
+    'playing_time': playingTime,
+    'min_age': minAge,
+    'description': description,
+    'thumbnail_url': thumbnailUrl,
+    'image_url': imageUrl,
+    'players_display': playersDisplay,
+    'play_time_display': playTimeDisplay,
+  };
 }

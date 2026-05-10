@@ -21,9 +21,7 @@ class CollectionProvider extends ChangeNotifier {
   List<CollectionItem> get _filtered {
     if (_query.isEmpty) return _items;
     final q = _query.toLowerCase();
-    return _items
-        .where((c) => c.game.title.toLowerCase().contains(q))
-        .toList();
+    return _items.where((c) => c.game.title.toLowerCase().contains(q)).toList();
   }
 
   void setQuery(String q) {
@@ -56,17 +54,27 @@ class CollectionProvider extends ChangeNotifier {
 
   Future<void> _saveCache(List<CollectionItem> items) async {
     final prefs = await SharedPreferences.getInstance();
-    final encoded = jsonEncode(items.map((c) => {
-          'id': c.id,
-          'source': c.source,
-          'is_lent': c.isLent,
-          'lent_to': c.lentTo,
-          'game': c.game.toJson(),
-        }).toList());
+    final encoded = jsonEncode(
+      items
+          .map(
+            (c) => {
+              'id': c.id,
+              'source': c.source,
+              'acquisition_date': c.acquisitionDate,
+              'notes': c.notes,
+              'is_lent': c.isLent,
+              'lent_to': c.lentTo,
+              'lent_date': c.lentDate,
+              'game': c.game.toJson(),
+            },
+          )
+          .toList(),
+    );
     await prefs.setString(AppConstants.collectionCacheKey, encoded);
     await prefs.setInt(
-        AppConstants.collectionCacheTimeKey,
-        DateTime.now().millisecondsSinceEpoch);
+      AppConstants.collectionCacheTimeKey,
+      DateTime.now().millisecondsSinceEpoch,
+    );
   }
 
   Future<void> _tryLoadCache() async {

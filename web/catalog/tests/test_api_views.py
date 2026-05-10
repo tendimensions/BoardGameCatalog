@@ -347,6 +347,57 @@ class DiscardBarcodeViewTests(ApiTestCase):
         self.assertTrue(UnlinkedBarcode.objects.filter(user=other, upc=self.UPC).exists())
 
 
+class GameBarcodeAssignViewTests(ApiTestCase):
+    UPC = '555444333222'
+
+    def setUp(self):
+        super().setUp()
+        self.game = _make_game(title='Pandemic', bgg_id=30549, upc='')
+        UserCollection.objects.create(user=self.user, game=self.game)
+
+    def _url(self, game_id=None):
+        return f'/api/v1/games/{game_id or self.game.id}/barcode'
+
+    def test_missing_upc_returns_400(self):
+        resp = self.client.post(self._url(), {}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_game_not_in_collection_returns_404(self):
+        other_game = _make_game(title='Other', bgg_id=99999)
+        resp = self.client.post(self._url(other_game.id), {'upc': self.UPC}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_existing_barcode_returns_409(self):
+        self.game.upc = 'already-linked'
+        self.game.save()
+        resp = self.client.post(self._url(), {'upc': self.UPC}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_409_CONFLICT)
+
+    def test_conflicting_barcode_on_other_game_returns_409(self):
+        _make_game(title='Catan', bgg_id=13, upc=self.UPC)
+        resp = self.client.post(self._url(), {'upc': self.UPC}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_409_CONFLICT)
+
+    @patch('catalog.api_views.gameupc_client.submit_barcode_mapping')
+    def test_assigns_barcode_and_submits_to_gameupc(self, mock_submit):
+        mock_submit.return_value = True
+        resp = self.client.post(self._url(), {'upc': self.UPC}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.game.refresh_from_db()
+        self.assertEqual(self.game.upc, self.UPC)
+        self.assertTrue(resp.data['submitted_to_gameupc'])
+        mock_submit.assert_called_once_with(self.UPC, self.game.bgg_id, self.user.id)
+
+    @patch('catalog.api_views.gameupc_client.submit_barcode_mapping')
+    def test_skips_submit_when_game_has_no_bgg_id(self, mock_submit):
+        self.game.bgg_id = None
+        self.game.save()
+        resp = self.client.post(self._url(), {'upc': self.UPC}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertFalse(resp.data['submitted_to_gameupc'])
+        mock_submit.assert_not_called()
+
+
 # ── GameListsView ─────────────────────────────────────────────────────────────
 
 class GameListsViewTests(ApiTestCase):
