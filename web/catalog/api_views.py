@@ -311,7 +311,7 @@ class APICollectionView(APIView):
         qs = qs.order_by(sort_field)
 
         try:
-            limit = min(int(request.GET.get('limit', 50)), 200)
+            limit = min(int(request.GET.get('limit', 50)), 500)
             offset = int(request.GET.get('offset', 0))
         except (ValueError, TypeError):
             limit, offset = 50, 0
@@ -319,11 +319,30 @@ class APICollectionView(APIView):
         total = qs.count()
         page = qs[offset: offset + limit]
 
+        items_data = CollectionItemSerializer(page, many=True).data
+
+        # Annotate each item with the IDs of the user's lists that contain it.
+        # Done in a single extra query to avoid N+1 (REQ-issue-23).
+        if items_data:
+            game_ids = [item['game']['id'] for item in items_data]
+            game_id_to_list_ids: dict[int, list[int]] = {}
+            for row in (
+                GameListEntry.objects
+                .filter(game_list__user=request.user, game_id__in=game_ids)
+                .values('game_id', 'game_list_id')
+                .distinct()
+            ):
+                game_id_to_list_ids.setdefault(row['game_id'], []).append(
+                    row['game_list_id']
+                )
+            for item in items_data:
+                item['list_ids'] = game_id_to_list_ids.get(item['game']['id'], [])
+
         return Response({
             'total_count': total,
             'limit': limit,
             'offset': offset,
-            'games': CollectionItemSerializer(page, many=True).data,
+            'games': items_data,
         })
 
 

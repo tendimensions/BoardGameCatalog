@@ -7,11 +7,24 @@ import '../services/api_service.dart';
 
 enum LoadState { idle, loading, loaded, error }
 
+/// Sentinel value for "in any list" — distinct from a real list ID.
+const int kAnyListId = -1;
+
 class CollectionProvider extends ChangeNotifier {
   List<CollectionItem> _items = [];
   LoadState _state = LoadState.idle;
   String? _error;
   String _query = '';
+
+  // ── Active filters (Issue #23) ────────────────────────────────────────────
+  /// When true, only show items without a linked barcode.
+  bool _filterUnlinked = false;
+  /// null = no list filter; [kAnyListId] = any list; positive int = specific list.
+  int? _filterListId;
+
+  bool get filterUnlinked => _filterUnlinked;
+  int? get filterListId => _filterListId;
+  bool get hasActiveFilter => _filterUnlinked || _filterListId != null;
 
   List<CollectionItem> get items => _filtered;
   LoadState get loadState => _state;
@@ -19,13 +32,48 @@ class CollectionProvider extends ChangeNotifier {
   bool get isLoading => _state == LoadState.loading;
 
   List<CollectionItem> get _filtered {
-    if (_query.isEmpty) return _items;
-    final q = _query.toLowerCase();
-    return _items.where((c) => c.game.title.toLowerCase().contains(q)).toList();
+    var items = _items;
+
+    // Text search
+    if (_query.isNotEmpty) {
+      final q = _query.toLowerCase();
+      items = items.where((c) => c.game.title.toLowerCase().contains(q)).toList();
+    }
+
+    // Barcode not linked filter
+    if (_filterUnlinked) {
+      items = items.where((c) => c.game.upc.isEmpty).toList();
+    }
+
+    // In a list filter
+    if (_filterListId != null) {
+      if (_filterListId == kAnyListId) {
+        items = items.where((c) => c.listIds.isNotEmpty).toList();
+      } else {
+        items = items.where((c) => c.listIds.contains(_filterListId)).toList();
+      }
+    }
+
+    return items;
   }
 
   void setQuery(String q) {
     _query = q;
+    notifyListeners();
+  }
+
+  /// Update active filters. Pass [clearListFilter] to remove the list filter.
+  void setFilter({
+    bool? unlinked,
+    int? listId,
+    bool clearListFilter = false,
+  }) {
+    if (unlinked != null) _filterUnlinked = unlinked;
+    if (clearListFilter) {
+      _filterListId = null;
+    } else if (listId != null) {
+      _filterListId = listId;
+    }
     notifyListeners();
   }
 
@@ -36,7 +84,7 @@ class CollectionProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final fresh = await ApiService(apiKey).fetchCollection();
+      final fresh = await ApiService(apiKey).fetchAllCollection();
       _items = fresh;
       _state = LoadState.loaded;
       await _saveCache(fresh);
@@ -65,6 +113,7 @@ class CollectionProvider extends ChangeNotifier {
               'is_lent': c.isLent,
               'lent_to': c.lentTo,
               'lent_date': c.lentDate,
+              'list_ids': c.listIds,
               'game': c.game.toJson(),
             },
           )

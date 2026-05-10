@@ -9,6 +9,8 @@ class CollectionItem {
   final bool isLent;
   final String lentTo;
   final String? lentDate;
+  /// IDs of the user's GameLists that contain this game (populated by the API).
+  final List<int> listIds;
 
   const CollectionItem({
     required this.id,
@@ -19,6 +21,7 @@ class CollectionItem {
     required this.isLent,
     required this.lentTo,
     this.lentDate,
+    this.listIds = const [],
   });
 
   factory CollectionItem.fromJson(Map<String, dynamic> json) {
@@ -31,6 +34,10 @@ class CollectionItem {
       isLent: json['is_lent'] as bool? ?? false,
       lentTo: json['lent_to'] as String? ?? '',
       lentDate: json['lent_date'] as String?,
+      listIds: (json['list_ids'] as List<dynamic>?)
+              ?.map((e) => (e as num).toInt())
+              .toList() ??
+          const [],
     );
   }
 
@@ -43,6 +50,7 @@ class CollectionItem {
     bool? isLent,
     String? lentTo,
     String? lentDate,
+    List<int>? listIds,
   }) {
     return CollectionItem(
       id: id ?? this.id,
@@ -53,6 +61,7 @@ class CollectionItem {
       isLent: isLent ?? this.isLent,
       lentTo: lentTo ?? this.lentTo,
       lentDate: lentDate ?? this.lentDate,
+      listIds: listIds ?? this.listIds,
     );
   }
 }

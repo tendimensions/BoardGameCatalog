@@ -29,16 +29,44 @@ class LinkBarcodeScreen extends StatefulWidget {
 class _LinkBarcodeScreenState extends State<LinkBarcodeScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+
+  // ── Shared search query (Issue #21) ─────────────────────────────────────
+  String _sharedQuery = '';
+  final _collectionKey = GlobalKey<_CollectionTabState>();
+  final _bggKey = GlobalKey<_BggSearchTabState>();
+  int _lastTabIndex = 0;
+
   bool _linking = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    // indexIsChanging is true during the swipe/animation; we only act once settled.
+    if (_tabController.indexIsChanging) return;
+    if (_tabController.index == _lastTabIndex) return;
+    _lastTabIndex = _tabController.index;
+
+    if (_tabController.index == 1) {
+      // Switching to Search BGG — propagate current query and auto-search.
+      _bggKey.currentState?.setQuery(_sharedQuery);
+    } else {
+      // Switching to My Collection — propagate current query and re-filter.
+      _collectionKey.currentState?.setQuery(_sharedQuery);
+    }
+  }
+
+  void _onQueryChanged(String query) {
+    _sharedQuery = query;
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     super.dispose();
   }
@@ -324,14 +352,18 @@ class _LinkBarcodeScreenState extends State<LinkBarcodeScreen>
                       controller: _tabController,
                       children: [
                         _CollectionTab(
+                          key: _collectionKey,
                           upc: widget.upc,
                           apiKey: widget.apiKey,
                           onLink: _confirmAndLinkByGameId,
+                          onQueryChanged: _onQueryChanged,
                         ),
                         _BggSearchTab(
+                          key: _bggKey,
                           upc: widget.upc,
                           apiKey: widget.apiKey,
                           onLink: _confirmAndLinkByBggId,
+                          onQueryChanged: _onQueryChanged,
                         ),
                       ],
                     ),
@@ -350,11 +382,15 @@ class _CollectionTab extends StatefulWidget {
   final String upc;
   final String apiKey;
   final Future<void> Function(CollectionItem) onLink;
+  /// Called whenever the search text changes so the parent can sync to the BGG tab.
+  final void Function(String) onQueryChanged;
 
   const _CollectionTab({
+    super.key,
     required this.upc,
     required this.apiKey,
     required this.onLink,
+    required this.onQueryChanged,
   });
 
   @override
@@ -384,9 +420,17 @@ class _CollectionTabState extends State<_CollectionTab>
     super.dispose();
   }
 
+  /// Called by the parent when the BGG tab's query changes and the user switches here.
+  void setQuery(String q) {
+    if (_searchController.text == q) return;
+    _searchController.text = q;
+    _onSearchChanged(q);
+  }
+
   Future<void> _loadUnlinkedGames() async {
     try {
-      final all = await ApiService(widget.apiKey).fetchCollection(limit: 200);
+      // fetchAllCollection() pages automatically — no 200-game truncation (Issue #16).
+      final all = await ApiService(widget.apiKey).fetchAllCollection();
       final unlinked = all.where((c) => c.game.upc.isEmpty).toList();
       setState(() {
         _allUnlinked = unlinked;
@@ -402,6 +446,7 @@ class _CollectionTabState extends State<_CollectionTab>
   }
 
   void _onSearchChanged(String query) {
+    widget.onQueryChanged(query);
     final q = query.toLowerCase();
     setState(() {
       _filtered = q.isEmpty
@@ -508,7 +553,7 @@ class _CollectionTabState extends State<_CollectionTab>
                           width: 44,
                           height: 44,
                           fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => const _PlaceholderThumb(),
+                          errorWidget: (_, _, _) => const _PlaceholderThumb(),
                         )
                       : const _PlaceholderThumb(),
                 ),
@@ -554,11 +599,15 @@ class _BggSearchTab extends StatefulWidget {
   final String upc;
   final String apiKey;
   final Future<void> Function(BggSearchResult) onLink;
+  /// Called whenever the search text changes so the parent can sync to the Collection tab.
+  final void Function(String) onQueryChanged;
 
   const _BggSearchTab({
+    super.key,
     required this.upc,
     required this.apiKey,
     required this.onLink,
+    required this.onQueryChanged,
   });
 
   @override
@@ -583,7 +632,16 @@ class _BggSearchTabState extends State<_BggSearchTab>
     super.dispose();
   }
 
+  /// Called by the parent when the Collection tab's query changes and the user
+  /// switches here. Populates the field and triggers a debounced BGG search.
+  void setQuery(String q) {
+    if (_searchController.text == q) return;
+    _searchController.text = q;
+    _onQueryChanged(q);
+  }
+
   void _onQueryChanged(String query) {
+    widget.onQueryChanged(query);
     _debounce?.cancel();
     if (query.trim().isEmpty) {
       setState(() {
@@ -738,7 +796,7 @@ class _BggSearchTabState extends State<_BggSearchTab>
                           width: 44,
                           height: 44,
                           fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => const _PlaceholderThumb(),
+                          errorWidget: (_, _, _) => const _PlaceholderThumb(),
                         )
                       : const _PlaceholderThumb(),
                 ),

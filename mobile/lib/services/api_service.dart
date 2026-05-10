@@ -6,7 +6,6 @@ import '../models/collection_item.dart';
 import '../models/game.dart';
 import '../models/game_list.dart';
 import '../models/game_list_entry.dart';
-import '../models/scan_result.dart';
 
 class ApiException implements Exception {
   final int statusCode;
@@ -127,8 +126,9 @@ class ApiService {
     return body['username'] as String;
   }
 
-  /// Fetches the full collection. Throws [ApiException] on error.
-  Future<List<CollectionItem>> fetchCollection({
+  /// Fetches a single page of the collection. Prefer [fetchAllCollection] for
+  /// loading the complete set. Throws [ApiException] on error.
+  Future<({List<CollectionItem> items, int totalCount})> fetchCollection({
     String query = '',
     String sort = 'title',
     String order = 'asc',
@@ -147,9 +147,42 @@ class ApiService {
         .timeout(const Duration(seconds: 15));
     final body = await _checkResponse(resp);
     final list = body['games'] as List<dynamic>;
-    return list
-        .map((e) => CollectionItem.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return (
+      items: list
+          .map((e) => CollectionItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      totalCount: (body['total_count'] as num?)?.toInt() ?? list.length,
+    );
+  }
+
+  /// Fetches the user's **entire** collection by paging through all results.
+  ///
+  /// Uses pages of 200 so we stay within the server's 500-item cap while
+  /// making as few requests as possible. Callers receive the complete flat
+  /// list — no pagination bookkeeping needed. Throws [ApiException] on error.
+  Future<List<CollectionItem>> fetchAllCollection({
+    String sort = 'title',
+    String order = 'asc',
+  }) async {
+    const pageSize = 200;
+    final results = <CollectionItem>[];
+    int offset = 0;
+    int totalCount = -1;
+
+    do {
+      final page = await fetchCollection(
+        sort: sort,
+        order: order,
+        limit: pageSize,
+        offset: offset,
+      );
+      totalCount = page.totalCount;
+      results.addAll(page.items);
+      offset += page.items.length;
+      if (page.items.isEmpty) break; // safety guard against infinite loop
+    } while (offset < totalCount);
+
+    return results;
   }
 
   /// Directly links a scanned barcode to an existing collection game chosen
