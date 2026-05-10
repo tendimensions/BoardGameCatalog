@@ -59,13 +59,62 @@ class ApiService {
     if (resp.statusCode == 401 || resp.statusCode == 403) {
       throw ApiException(resp.statusCode, 'Invalid or expired API key.');
     }
-    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    final body = _decodeResponseBody(resp);
     if (resp.statusCode >= 400) {
       final msg =
-          body['error'] as String? ?? 'Unexpected error (${resp.statusCode})';
+          body['error'] as String? ??
+          _fallbackErrorMessage(resp.statusCode, resp.body);
       throw ApiException(resp.statusCode, msg);
     }
     return Future.value(body);
+  }
+
+  Map<String, dynamic> _decodeResponseBody(http.Response resp) {
+    if (resp.body.isEmpty) {
+      return const <String, dynamic>{};
+    }
+
+    try {
+      final decoded = jsonDecode(resp.body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      if (decoded is Map) {
+        return Map<String, dynamic>.from(decoded);
+      }
+    } on FormatException {
+      if (resp.statusCode >= 400) {
+        return {
+          'error': _fallbackErrorMessage(resp.statusCode, resp.body),
+        };
+      }
+      rethrow;
+    }
+
+    if (resp.statusCode >= 400) {
+      return {
+        'error': _fallbackErrorMessage(resp.statusCode, resp.body),
+      };
+    }
+
+    throw const FormatException('Expected a JSON object response.');
+  }
+
+  String _fallbackErrorMessage(int statusCode, String responseBody) {
+    if (statusCode == 404) {
+      return 'The server does not support this barcode-link feature yet. '
+          'The web API may need to be deployed before this action will work.';
+    }
+    if (statusCode >= 500) {
+      return 'The server hit an internal error while linking the barcode. '
+          'If this keeps happening, the web deployment may be out of date.';
+    }
+
+    if (responseBody.trim().isNotEmpty) {
+      return 'Unexpected server response ($statusCode).';
+    }
+
+    return 'Unexpected error ($statusCode).';
   }
 
   /// Validates the API key by fetching the user profile.

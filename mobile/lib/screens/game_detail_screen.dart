@@ -116,7 +116,9 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Could not link barcode. Check your connection and try again.',
+            'Could not reach the server while linking this barcode. '
+            'Check your connection. If the problem persists, the server '
+            'may not have this feature deployed yet.',
           ),
           backgroundColor: Color(0xFF5a1a1a),
         ),

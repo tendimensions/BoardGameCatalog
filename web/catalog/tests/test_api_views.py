@@ -389,6 +389,15 @@ class GameBarcodeAssignViewTests(ApiTestCase):
         mock_submit.assert_called_once_with(self.UPC, self.game.bgg_id, self.user.id)
 
     @patch('catalog.api_views.gameupc_client.submit_barcode_mapping')
+    def test_returns_success_even_if_gameupc_submission_fails(self, mock_submit):
+        mock_submit.return_value = False
+        resp = self.client.post(self._url(), {'upc': self.UPC}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.game.refresh_from_db()
+        self.assertEqual(self.game.upc, self.UPC)
+        self.assertFalse(resp.data['submitted_to_gameupc'])
+
+    @patch('catalog.api_views.gameupc_client.submit_barcode_mapping')
     def test_skips_submit_when_game_has_no_bgg_id(self, mock_submit):
         self.game.bgg_id = None
         self.game.save()

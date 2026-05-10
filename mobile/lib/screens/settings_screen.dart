@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 
@@ -13,6 +14,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  static final Uri _webAppUri = Uri.parse('https://boardgames.tendimensions.com');
   String _version = '—';
 
   // GameUPC test state
@@ -88,6 +90,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       });
     });
+  }
+
+  Future<void> _openWebApp() async {
+    final launched = await launchUrl(
+      _webAppUri,
+      mode: LaunchMode.externalApplication,
+    );
+
+    if (!mounted || launched) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Could not open the web app in your browser.'),
+        backgroundColor: Color(0xFF5a1a1a),
+      ),
+    );
   }
 
   @override
@@ -188,6 +206,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               icon: Icons.language,
               label: 'Web App',
               value: 'boardgames.tendimensions.com',
+              onTap: _openWebApp,
+              trailingIcon: Icons.open_in_new,
             ),
             const SizedBox(height: 24),
 
@@ -347,16 +367,20 @@ class _InfoTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
+  final VoidCallback? onTap;
+  final IconData? trailingIcon;
 
   const _InfoTile({
     required this.icon,
     required this.label,
     required this.value,
+    this.onTap,
+    this.trailingIcon,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final content = Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
@@ -372,8 +396,32 @@ class _InfoTile extends StatelessWidget {
               style: const TextStyle(color: Color(0xFF888888), fontSize: 13)),
           const Spacer(),
           Text(value,
-              style: const TextStyle(color: Color(0xFFdddddd), fontSize: 13)),
+              style: TextStyle(
+                color: onTap == null
+                    ? const Color(0xFFdddddd)
+                    : const Color(0xFF7eb8f7),
+                fontSize: 13,
+                decoration: onTap == null ? null : TextDecoration.underline,
+                decorationColor: const Color(0xFF7eb8f7),
+              )),
+          if (trailingIcon != null) ...[
+            const SizedBox(width: 8),
+            Icon(trailingIcon, size: 16, color: const Color(0xFF7eb8f7)),
+          ],
         ],
+      ),
+    );
+
+    if (onTap == null) {
+      return content;
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: content,
       ),
     );
   }
