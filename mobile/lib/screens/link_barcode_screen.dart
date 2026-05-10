@@ -144,9 +144,11 @@ class _LinkBarcodeScreenState extends State<LinkBarcodeScreen>
 
       if (!mounted) return;
 
-      final msg = result.submittedToGameUpc
-          ? 'Barcode linked and submitted to GameUPC.com!'
-          : 'Barcode linked. (GameUPC submission skipped — no BGG ID)';
+      final msg =
+          result.message ??
+          (result.submittedToGameUpc
+              ? 'Barcode linked and submitted to GameUPC.com!'
+              : 'Barcode linked. (GameUPC submission skipped — no BGG ID)');
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(msg), backgroundColor: const Color(0xFF2e7d32)),
@@ -187,9 +189,12 @@ class _LinkBarcodeScreenState extends State<LinkBarcodeScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result.submittedToGameUpc
-              ? 'Game added and submitted to GameUPC.com!'
-              : 'Game added. (GameUPC submission failed — will retry later)'),
+          content: Text(
+            result.message ??
+                (result.submittedToGameUpc
+                    ? 'Game added and submitted to GameUPC.com!'
+                    : 'Game added. (GameUPC submission failed — will retry later)'),
+          ),
           backgroundColor: const Color(0xFF2e7d32),
         ),
       );
