@@ -1,7 +1,7 @@
 name: boardgamecatalog
 description: "Board Game Catalog — manage your collection and scan barcodes."
 publish_to: 'none'
-version: 1.1.0+3
+version: 0.9.1+1
 
 environment:
   sdk: ^3.11.0

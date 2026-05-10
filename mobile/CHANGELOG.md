@@ -1,13 +1,25 @@
 # Mobile App Changelog
 
 ## Firebase Release Notes
-- Added a dedicated game detail screen when tapping items in the Collection tab.
-- Added direct barcode linking from the game detail screen for games without a UPC.
-- Exposed richer game metadata and collection details on mobile.
+- Full collection now loads for users with more than 200 games (pagination fix).
+- Typing a game name in the barcode-link screen now carries across both tabs.
+- New filter icon on the Collection tab: filter by Barcode Not Linked or In a List.
 
 ---
 
 All notable changes to the Board Game Catalog Flutter app.
+
+## [0.9.1] — 2026-05-09
+
+### Fixed
+- Collection silently truncated at 200 games — now pages automatically until the full set is loaded (Issue #16).
+- Typing in one tab of the barcode-link screen now carries to the other tab on switch (Issue #21).
+
+### Added
+- Filter icon on the Collection search bar: "Barcode Not Linked" toggle and "In a List" selector with per-list breakdown (Issue #23).
+
+### CI/CD
+- Version number now read directly from `pubspec.yaml`; removed the manually-maintained `$PROJECT_BUILD_VERSION` Codemagic variable that was causing the app to always report `1.0.0`.
 
 ## [1.1.0] — 2026-05-09
 
