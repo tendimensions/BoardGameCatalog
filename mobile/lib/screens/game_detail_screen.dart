@@ -91,9 +91,11 @@ class _GameDetailScreenState extends State<GameDetailScreen> {
         _linkingBarcode = false;
       });
 
-      final message = result.submittedToGameUpc
-          ? 'Barcode linked and submitted to GameUPC.com.'
-          : 'Barcode linked to this game.';
+      final message =
+          result.message ??
+          (result.submittedToGameUpc
+              ? 'Barcode linked and submitted to GameUPC.com.'
+              : 'Barcode linked to this game.');
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

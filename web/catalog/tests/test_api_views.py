@@ -10,7 +10,13 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from accounts.models import APIKey, User
-from catalog.gameupc import GameNotFound, GameUPCError, GameUPCResult
+from catalog.gameupc import (
+    GameNotFound,
+    GameUPCCandidate,
+    GameUPCCandidates,
+    GameUPCError,
+    GameUPCResult,
+)
 from catalog.models import Game, GameList, GameListEntry, UnlinkedBarcode, UserCollection
 
 
@@ -378,8 +384,104 @@ class GameBarcodeAssignViewTests(ApiTestCase):
         resp = self.client.post(self._url(), {'upc': self.UPC}, format='json')
         self.assertEqual(resp.status_code, status.HTTP_409_CONFLICT)
 
+    @patch('catalog.api_views.gameupc_client.lookup_barcode')
     @patch('catalog.api_views.gameupc_client.submit_barcode_mapping')
-    def test_assigns_barcode_and_submits_to_gameupc(self, mock_submit):
+    def test_skips_submit_when_gameupc_already_matches_same_game(self, mock_submit, mock_lookup):
+        mock_lookup.return_value = GameUPCResult(
+            upc=self.UPC,
+            candidate=GameUPCCandidate(
+                bgg_id=self.game.bgg_id,
+                title=self.game.title,
+                year_published=2008,
+                min_players=2,
+                max_players=4,
+                playing_time=60,
+                thumbnail_url='https://example.com/thumb.jpg',
+                image_url='https://example.com/image.jpg',
+                confidence=1.0,
+            ),
+        )
+        resp = self.client.post(self._url(), {'upc': self.UPC}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.game.refresh_from_db()
+        self.assertEqual(self.game.upc, self.UPC)
+        self.assertFalse(resp.data['submitted_to_gameupc'])
+        self.assertIn('already matches', resp.data['message'])
+        mock_submit.assert_not_called()
+
+    @patch('catalog.api_views.gameupc_client.lookup_barcode')
+    def test_conflicting_remote_gameupc_match_returns_409(self, mock_lookup):
+        mock_lookup.return_value = GameUPCResult(
+            upc=self.UPC,
+            candidate=GameUPCCandidate(
+                bgg_id=13,
+                title='Catan',
+                year_published=1995,
+                min_players=3,
+                max_players=4,
+                playing_time=90,
+                thumbnail_url='https://example.com/thumb.jpg',
+                image_url='https://example.com/image.jpg',
+                confidence=1.0,
+            ),
+        )
+        resp = self.client.post(self._url(), {'upc': self.UPC}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_409_CONFLICT)
+        self.game.refresh_from_db()
+        self.assertEqual(self.game.upc, '')
+        self.assertIn('GameUPC already links this barcode', resp.data['error'])
+
+    @patch('catalog.api_views.gameupc_client.lookup_barcode')
+    def test_conflicting_remote_ambiguous_candidates_return_409(self, mock_lookup):
+        mock_lookup.return_value = GameUPCCandidates(
+            upc=self.UPC,
+            candidates=[
+                GameUPCCandidate(
+                    bgg_id=13,
+                    title='Catan',
+                    year_published=1995,
+                    min_players=3,
+                    max_players=4,
+                    playing_time=90,
+                    thumbnail_url='https://example.com/thumb.jpg',
+                    image_url='https://example.com/image.jpg',
+                    confidence=0.6,
+                ),
+                GameUPCCandidate(
+                    bgg_id=822,
+                    title='Carcassonne',
+                    year_published=2000,
+                    min_players=2,
+                    max_players=5,
+                    playing_time=45,
+                    thumbnail_url='https://example.com/thumb2.jpg',
+                    image_url='https://example.com/image2.jpg',
+                    confidence=0.4,
+                ),
+            ],
+        )
+        resp = self.client.post(self._url(), {'upc': self.UPC}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_409_CONFLICT)
+        self.game.refresh_from_db()
+        self.assertEqual(self.game.upc, '')
+        self.assertIn('associates this barcode with other games', resp.data['error'])
+
+    @patch('catalog.api_views.gameupc_client.lookup_barcode')
+    @patch('catalog.api_views.gameupc_client.submit_barcode_mapping')
+    def test_links_locally_when_gameupc_lookup_fails(self, mock_submit, mock_lookup):
+        mock_lookup.side_effect = GameUPCError('timeout')
+        resp = self.client.post(self._url(), {'upc': self.UPC}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.game.refresh_from_db()
+        self.assertEqual(self.game.upc, self.UPC)
+        self.assertFalse(resp.data['submitted_to_gameupc'])
+        self.assertIn('could not be checked', resp.data['message'])
+        mock_submit.assert_not_called()
+
+    @patch('catalog.api_views.gameupc_client.lookup_barcode')
+    @patch('catalog.api_views.gameupc_client.submit_barcode_mapping')
+    def test_assigns_barcode_and_submits_to_gameupc(self, mock_submit, mock_lookup):
+        mock_lookup.side_effect = GameNotFound('not found')
         mock_submit.return_value = True
         resp = self.client.post(self._url(), {'upc': self.UPC}, format='json')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
@@ -388,8 +490,10 @@ class GameBarcodeAssignViewTests(ApiTestCase):
         self.assertTrue(resp.data['submitted_to_gameupc'])
         mock_submit.assert_called_once_with(self.UPC, self.game.bgg_id, self.user.id)
 
+    @patch('catalog.api_views.gameupc_client.lookup_barcode')
     @patch('catalog.api_views.gameupc_client.submit_barcode_mapping')
-    def test_returns_success_even_if_gameupc_submission_fails(self, mock_submit):
+    def test_returns_success_even_if_gameupc_submission_fails(self, mock_submit, mock_lookup):
+        mock_lookup.side_effect = GameNotFound('not found')
         mock_submit.return_value = False
         resp = self.client.post(self._url(), {'upc': self.UPC}, format='json')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)

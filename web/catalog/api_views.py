@@ -33,6 +33,84 @@ from .serializers import (
 logger = logging.getLogger(__name__)
 
 
+def _prepare_gameupc_link(upc, game, user):
+    """
+    Preflight a direct UPC link against GameUPC before mutating local state.
+
+    Returns a dict with:
+      - conflict_error: str | None
+      - should_submit: bool
+      - message: str | None
+    """
+    if not game.bgg_id:
+        return {
+            'conflict_error': None,
+            'should_submit': False,
+            'message': 'Barcode linked locally. This game has no BoardGameGeek ID, so GameUPC submission was skipped.',
+        }
+
+    try:
+        lookup = gameupc_client.lookup_barcode(upc)
+    except GameNotFound:
+        return {
+            'conflict_error': None,
+            'should_submit': True,
+            'message': None,
+        }
+    except GameUPCError as exc:
+        logger.warning(
+            'Could not preflight GameUPC barcode %s for user %s: %s',
+            upc,
+            user.username,
+            exc,
+        )
+        return {
+            'conflict_error': None,
+            'should_submit': False,
+            'message': 'Barcode linked locally, but GameUPC could not be checked right now.',
+        }
+
+    if isinstance(lookup, GameUPCResult):
+        candidate = lookup.candidate
+        if candidate.bgg_id == game.bgg_id:
+            return {
+                'conflict_error': None,
+                'should_submit': False,
+                'message': 'Barcode linked locally. GameUPC already matches this barcode to this game.',
+            }
+
+        return {
+            'conflict_error': (
+                f'GameUPC already links this barcode to "{candidate.title}". '
+                'Review the barcode before linking it to a different game.'
+            ),
+            'should_submit': False,
+            'message': None,
+        }
+
+    matching_candidate = next(
+        (candidate for candidate in lookup.candidates if candidate.bgg_id == game.bgg_id),
+        None,
+    )
+    if matching_candidate is not None:
+        return {
+            'conflict_error': None,
+            'should_submit': False,
+            'message': 'Barcode linked locally. GameUPC already includes this game among the current barcode matches.',
+        }
+
+    candidate_titles = ', '.join(candidate.title for candidate in lookup.candidates[:3])
+    return {
+        'conflict_error': (
+            'GameUPC already associates this barcode with other games'
+            + (f' ({candidate_titles})' if candidate_titles else '')
+            + '. Review the barcode before linking it to a different game.'
+        ),
+        'should_submit': False,
+        'message': None,
+    }
+
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 class LoginView(APIView):
@@ -121,7 +199,7 @@ class GameBarcodeAssignView(APIView):
     by the user from the detail screen.
 
     Request:  { "upc": "012345678901" }
-    Response: { "game": {...}, "submitted_to_gameupc": bool }
+        Response: { "game": {...}, "submitted_to_gameupc": bool, "message": str? }
     """
 
     permission_classes = [IsAuthenticated]
@@ -161,12 +239,24 @@ class GameBarcodeAssignView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        gameupc_preflight = _prepare_gameupc_link(upc, game, request.user)
+        if gameupc_preflight['conflict_error'] is not None:
+            return Response(
+                {'error': gameupc_preflight['conflict_error']},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         game.upc = upc
         game.save(update_fields=['upc', 'updated_at'])
 
         submitted = False
-        if game.bgg_id:
+        message = gameupc_preflight['message']
+        if gameupc_preflight['should_submit']:
             submitted = gameupc_client.submit_barcode_mapping(upc, game.bgg_id, request.user.id)
+            if submitted:
+                message = 'Barcode linked and submitted to GameUPC.com.'
+            else:
+                message = 'Barcode linked locally, but GameUPC submission did not succeed.'
 
         logger.info(
             'User %s directly linked barcode %s → game %s (BGG %s), submitted=%s',
@@ -174,7 +264,11 @@ class GameBarcodeAssignView(APIView):
         )
 
         return Response(
-            {'game': GameSerializer(game).data, 'submitted_to_gameupc': submitted},
+            {
+                'game': GameSerializer(game).data,
+                'submitted_to_gameupc': submitted,
+                'message': message,
+            },
             status=status.HTTP_200_OK,
         )
 
@@ -535,23 +629,33 @@ class LinkBarcodeView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        gameupc_preflight = _prepare_gameupc_link(upc, game, request.user)
+        if gameupc_preflight['conflict_error'] is not None:
+            return Response(
+                {'error': gameupc_preflight['conflict_error']},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         game.upc = upc
         game.save(update_fields=['upc', 'updated_at'])
 
         submitted = False
-        if game.bgg_id:
+        message = gameupc_preflight['message']
+        if gameupc_preflight['should_submit']:
             submitted = gameupc_client.submit_barcode_mapping(upc, game.bgg_id, request.user.id)
             if submitted:
                 logger.info(
                     'User %s linked barcode %s → game %s (BGG %s) and submitted to GameUPC',
                     request.user.username, upc, game.title, game.bgg_id,
                 )
+                message = 'Barcode linked and submitted to GameUPC.com.'
             else:
                 logger.warning(
                     'User %s linked barcode %s → game %s but GameUPC submission failed',
                     request.user.username, upc, game.title,
                 )
-        else:
+                message = 'Barcode linked locally, but GameUPC submission did not succeed.'
+        elif not game.bgg_id:
             logger.info(
                 'User %s linked barcode %s → game %s (no BGG ID, skipping GameUPC)',
                 request.user.username, upc, game.title,
@@ -560,7 +664,11 @@ class LinkBarcodeView(APIView):
         unlinked.delete()
 
         return Response(
-            {'game': GameSerializer(game).data, 'submitted_to_gameupc': submitted},
+            {
+                'game': GameSerializer(game).data,
+                'submitted_to_gameupc': submitted,
+                'message': message,
+            },
             status=status.HTTP_200_OK,
         )
 

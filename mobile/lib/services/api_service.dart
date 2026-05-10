@@ -154,7 +154,7 @@ class ApiService {
 
   /// Directly links a scanned barcode to an existing collection game chosen
   /// by the user from the detail screen.
-  Future<({Game game, bool submittedToGameUpc})> assignBarcodeToGame(
+  Future<({Game game, bool submittedToGameUpc, String? message})> assignBarcodeToGame(
     int gameId,
     String upc,
   ) async {
@@ -169,6 +169,7 @@ class ApiService {
     return (
       game: Game.fromJson(body['game'] as Map<String, dynamic>),
       submittedToGameUpc: body['submitted_to_gameupc'] as bool? ?? false,
+      message: body['message'] as String?,
     );
   }
 
@@ -243,7 +244,7 @@ class ApiService {
   /// Supply [gameId] to link to an existing collection game (Case 3, "My Collection" tab).
   /// Supply [bggId] to link via a BGG search result (Case 3, "Search BGG" tab).
   /// Exactly one of the two must be non-null.
-  Future<({Game game, bool submittedToGameUpc})> linkBarcode(
+  Future<({Game game, bool submittedToGameUpc, String? message})> linkBarcode(
     String upc, {
     int? gameId,
     int? bggId,
@@ -263,6 +264,7 @@ class ApiService {
     return (
       game: Game.fromJson(body['game'] as Map<String, dynamic>),
       submittedToGameUpc: body['submitted_to_gameupc'] as bool? ?? false,
+      message: body['message'] as String?,
     );
   }
 
