@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:boardgamecatalog/models/bgg_candidate.dart';
 import 'package:boardgamecatalog/models/game.dart';
 import 'package:boardgamecatalog/models/scan_result.dart';
 
@@ -38,6 +39,11 @@ void main() {
     test('awaitingLink label', () {
       final r = ScanResult(upc: '123', status: ScanStatus.awaitingLink);
       expect(r.statusLabel, 'Tap to link to a game');
+    });
+
+    test('needsSelection label', () {
+      final r = ScanResult(upc: '123', status: ScanStatus.needsSelection);
+      expect(r.statusLabel, 'Tap to identify game');
     });
 
     test('error label', () {
@@ -118,6 +124,24 @@ void main() {
     test('game can be provided', () {
       final r = ScanResult(upc: '123', status: ScanStatus.success, game: _game);
       expect(r.game, _game);
+    });
+
+    test('suggestions can be provided', () {
+      const suggestions = <BggCandidate>[
+        BggCandidate(
+          bggId: 13,
+          title: 'Catan',
+          yearPublished: 1995,
+          thumbnailUrl: 'https://example.com/thumb.jpg',
+          confidence: 0.92,
+        ),
+      ];
+      final r = ScanResult(
+        upc: '123',
+        status: ScanStatus.needsSelection,
+        suggestions: suggestions,
+      );
+      expect(r.suggestions, suggestions);
     });
   });
 }

@@ -161,4 +161,43 @@ void main() {
       expect(restored.bggId, game.bggId);
     });
   });
+
+  group('Game.copyWith', () {
+    const original = Game(
+      id: 9,
+      bggId: 120,
+      upc: '111222333444',
+      title: 'Original',
+      yearPublished: 2001,
+      minPlayers: 2,
+      maxPlayers: 5,
+      playingTime: 60,
+      minAge: 12,
+      description: 'Original description',
+      thumbnailUrl: 'https://example.com/original-thumb.jpg',
+      imageUrl: 'https://example.com/original-image.jpg',
+      playersDisplay: '2–5',
+      playTimeDisplay: '60 min',
+    );
+
+    test('returns updated fields and preserves the rest', () {
+      final updated = original.copyWith(
+        title: 'Updated',
+        upc: '999888777666',
+        minAge: 14,
+      );
+
+      expect(updated.title, 'Updated');
+      expect(updated.upc, '999888777666');
+      expect(updated.minAge, 14);
+      expect(updated.id, original.id);
+      expect(updated.bggId, original.bggId);
+      expect(updated.description, original.description);
+    });
+
+    test('returns a new instance', () {
+      final updated = original.copyWith(title: 'Updated');
+      expect(identical(updated, original), isFalse);
+    });
+  });
 }

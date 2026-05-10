@@ -100,4 +100,41 @@ void main() {
       expect(item.notes, '');
     });
   });
+
+  group('CollectionItem.copyWith', () {
+    final original = CollectionItem(
+      id: 10,
+      game: Game.fromJson(_gameJson()),
+      source: 'manual',
+      acquisitionDate: '2026-05-09',
+      notes: 'Original note',
+      isLent: false,
+      lentTo: '',
+      lentDate: null,
+    );
+
+    test('updates selected fields and preserves the rest', () {
+      final updated = original.copyWith(
+        source: 'barcode',
+        notes: 'Updated note',
+        isLent: true,
+        lentTo: 'Alice',
+        lentDate: '2026-05-10',
+      );
+
+      expect(updated.source, 'barcode');
+      expect(updated.notes, 'Updated note');
+      expect(updated.isLent, isTrue);
+      expect(updated.lentTo, 'Alice');
+      expect(updated.lentDate, '2026-05-10');
+      expect(updated.id, original.id);
+      expect(updated.game.title, original.game.title);
+      expect(updated.acquisitionDate, original.acquisitionDate);
+    });
+
+    test('returns a new instance', () {
+      final updated = original.copyWith(notes: 'Changed');
+      expect(identical(updated, original), isFalse);
+    });
+  });
 }
