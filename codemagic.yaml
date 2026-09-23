@@ -13,11 +13,10 @@
 #     FIREBASE_ANDROID_APP_ID    — Android app ID from Firebase console
 #     FIREBASE_IOS_APP_ID        — iOS app ID from Firebase console
 #
-#   Group: ios_signing
-#     CM_CERTIFICATE             — iOS distribution certificate (base64 encoded .p12)
-#     CM_CERTIFICATE_PASSWORD    — Certificate password
-#     CM_PROVISIONING_PROFILE    — Ad Hoc provisioning profile (base64 encoded .mobileprovision)
-#
+# iOS signing is via Codemagic's Code signing identities (Settings → codemagic.yaml
+# settings → Code signing identities), referenced below by name — not env vars:
+#   certificate: ios_distribution_cert (shared across all personal-account apps)
+#   provisioning profile: boardgamecatalog_adhoc (this app only)
 #
 # =============================================================================
 
@@ -73,7 +72,11 @@ workflows:
       cocoapods: default
       groups:
         - firebase_credentials
-        - ios_signing
+      ios_signing:
+        certificates:
+          - ios_distribution_cert
+        provisioning_profiles:
+          - boardgamecatalog_adhoc
     triggering:
       events:
         - push
@@ -81,20 +84,6 @@ workflows:
         - pattern: main
           include: true
     scripts:
-      - name: Set up keychain
-        script: keychain initialize
-
-      - name: Install certificate and provisioning profile
-        script: |
-          echo "$CM_CERTIFICATE" | base64 --decode > /tmp/certificate.p12
-          keychain add-certificates \
-            --certificate /tmp/certificate.p12 \
-            --certificate-password "$CM_CERTIFICATE_PASSWORD"
-          PROFILES_HOME="$HOME/Library/MobileDevice/Provisioning Profiles"
-          mkdir -p "$PROFILES_HOME"
-          echo "$CM_PROVISIONING_PROFILE" | base64 --decode > \
-            "$PROFILES_HOME/$(uuidgen).mobileprovision"
-
       - name: Set up code signing
         script: xcode-project use-profiles
         working_directory: mobile
@@ -135,7 +124,11 @@ workflows:
       cocoapods: default
       groups:
         - firebase_credentials
-        - ios_signing
+      ios_signing:
+        certificates:
+          - ios_distribution_cert
+        provisioning_profiles:
+          - boardgamecatalog_adhoc
     triggering:
       events:
         - push
@@ -143,20 +136,6 @@ workflows:
         - pattern: main
           include: true
     scripts:
-      - name: Set up keychain
-        script: keychain initialize
-
-      - name: Install certificate and provisioning profile
-        script: |
-          echo "$CM_CERTIFICATE" | base64 --decode > /tmp/certificate.p12
-          keychain add-certificates \
-            --certificate /tmp/certificate.p12 \
-            --certificate-password "$CM_CERTIFICATE_PASSWORD"
-          PROFILES_HOME="$HOME/Library/MobileDevice/Provisioning Profiles"
-          mkdir -p "$PROFILES_HOME"
-          echo "$CM_PROVISIONING_PROFILE" | base64 --decode > \
-            "$PROFILES_HOME/$(uuidgen).mobileprovision"
-
       - name: Set up code signing
         script: xcode-project use-profiles
         working_directory: mobile
